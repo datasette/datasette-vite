@@ -1,0 +1,44 @@
+[project]
+name = "datasette-vite"
+version = "0.1"
+description = "Utility for writing frontend plugins for Datasette with Vite"
+readme = "README.md"
+authors = [{name = "Alex Garcia"}]
+license = "Apache-2.0"
+classifiers=[
+    "Framework :: Datasette"
+]
+requires-python = ">=3.10"
+dependencies = [
+    "datasette",
+    "pydantic"
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "ty>=0.0.18",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+
+[project.urls]
+Homepage = "https://github.com/datasette/datasette-vite"
+Changelog = "https://github.com/datasette/datasette-vite/releases"
+Issues = "https://github.com/datasette/datasette-vite/issues"
+CI = "https://github.com/datasette/datasette-vite/actions"
+
+[project.entry-points.datasette]
+vite = "datasette_vite"
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.setuptools.package-data]
+datasette_vite = ["static/*", "templates/*"]
+
