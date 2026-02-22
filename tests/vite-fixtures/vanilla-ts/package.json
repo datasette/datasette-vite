@@ -1,0 +1,11 @@
+{
+  "name": "vanilla-ts-fixture",
+  "private": true,
+  "scripts": {
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "vite": "^6",
+    "typescript": "^5"
+  }
+}

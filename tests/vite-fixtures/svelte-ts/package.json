@@ -1,0 +1,14 @@
+{
+  "name": "svelte-ts-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5",
+    "svelte": "^5",
+    "vite": "^6",
+    "typescript": "^5"
+  }
+}

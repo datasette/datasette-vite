@@ -11,3 +11,5 @@ venv
 dist
 build
 uv.lock
+tests/vite-fixtures/*/node_modules/
+tests/vite-fixtures/*/dist/
