@@ -1,6 +1,6 @@
 [project]
 name = "datasette-vite"
-version = "0.1"
+version = "0.0.1a0"
 description = "Utility for writing frontend plugins for Datasette with Vite"
 readme = "README.md"
 authors = [{name = "Alex Garcia"}]
@@ -39,6 +39,9 @@ vite = "datasette_vite"
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "browser: Playwright browser tests (require built fixtures + browser binaries)",
+]
 
 [tool.setuptools.package-data]
 datasette_vite = ["static/*", "templates/*"]

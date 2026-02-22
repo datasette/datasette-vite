@@ -2,11 +2,13 @@
 
 This file is named to sort after test_vite.py so that Playwright's event loop
 does not interfere with pytest-asyncio tests.
+
+Skip all browser tests with: pytest -m "not browser"
 """
 
-from pathlib import Path
+import pytest
 
-FIXTURE_DIR = Path(__file__).parent / "vite-fixtures"
+pytestmark = pytest.mark.browser
 
 
 def test_vanilla_ts_browser(page, fixture_server):
