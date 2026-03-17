@@ -73,6 +73,45 @@ async def test_prod_mode_no_css(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_prod_mode_imported_chunk_css(tmp_path):
+    manifest = {
+        "src/pages/index.ts": {
+            "file": "static/gen/index-abc123.js",
+            "src": "src/pages/index.ts",
+            "isEntry": True,
+            "css": ["static/gen/index-def456.css"],
+            "imports": ["_shared-xyz789.js"],
+        },
+        "_shared-xyz789.js": {
+            "file": "static/gen/shared-xyz789.js",
+            "css": ["static/gen/shared-aaa111.css"],
+            "imports": ["_deep-bbb222.js"],
+        },
+        "_deep-bbb222.js": {
+            "file": "static/gen/deep-bbb222.js",
+            "css": ["static/gen/deep-ccc333.css"],
+        },
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+
+    datasette = Datasette(memory=True)
+    entry = vite_entry(
+        datasette=datasette,
+        plugin_package="datasette_vite",
+        manifest_dir=tmp_path,
+    )
+    html = await entry("src/pages/index.ts")
+    # Direct CSS from entry chunk
+    assert '<link rel="stylesheet" href="/-/static-plugins/datasette_vite/gen/index-def456.css">' in html
+    # CSS from first-level imported chunk
+    assert '<link rel="stylesheet" href="/-/static-plugins/datasette_vite/gen/shared-aaa111.css">' in html
+    # CSS from recursively imported chunk
+    assert '<link rel="stylesheet" href="/-/static-plugins/datasette_vite/gen/deep-ccc333.css">' in html
+    # The JS entry script
+    assert '<script type="module" src="/-/static-plugins/datasette_vite/gen/index-abc123.js"></script>' in html
+
+
+@pytest.mark.asyncio
 async def test_missing_entrypoint(tmp_path):
     (tmp_path / "manifest.json").write_text("{}")
 

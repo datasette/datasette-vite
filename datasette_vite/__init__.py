@@ -59,6 +59,26 @@ def vite_entry(
             href = datasette.urls.static_plugins(plugin_package, file)
             parts.append(f'<link rel="stylesheet" href="{href}">')
 
+        # Collect CSS from imported chunks (recursive)
+        seen = set()
+
+        def collect_import_css(chunk_key):
+            if chunk_key in seen:
+                return
+            seen.add(chunk_key)
+            imp_chunk = manifest.get(chunk_key)
+            if not imp_chunk:
+                return
+            for css in imp_chunk.css or []:
+                file = str(Path(css).relative_to("static"))
+                href = datasette.urls.static_plugins(plugin_package, file)
+                parts.append(f'<link rel="stylesheet" href="{href}">')
+            for sub_import in imp_chunk.imports or []:
+                collect_import_css(sub_import)
+
+        for imp in chunk.imports or []:
+            collect_import_css(imp)
+
         file = str(Path(chunk.file).relative_to("static"))
         src = datasette.urls.static_plugins(plugin_package, file)
         parts.append(f'<script type="module" src="{src}"></script>')
