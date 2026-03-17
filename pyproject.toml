@@ -1,6 +1,6 @@
 [project]
 name = "datasette-vite"
-version = "0.0.1a1"
+version = "0.0.1a2"
 description = "Utility for writing frontend plugins for Datasette with Vite"
 readme = "README.md"
 authors = [{name = "Alex Garcia"}]
