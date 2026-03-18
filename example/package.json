@@ -1,0 +1,12 @@
+{
+  "name": "datasette-example-vite-plugin",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "vite": "^6",
+    "typescript": "^5"
+  }
+}

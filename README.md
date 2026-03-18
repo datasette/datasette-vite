@@ -82,9 +82,42 @@ This produces:
 <script type="module" src="http://localhost:5173/src/main.ts"></script>
 ```
 
+### Using `vite_js_urls()` and `vite_css_urls()` for content scripts
+
+If your plugin needs to inject assets into *existing* Datasette pages (rather than owning the full template), use `vite_js_urls()` and `vite_css_urls()`. These return structured data suitable for Datasette's `extra_js_urls` and `extra_css_urls` hooks:
+
+```python
+from datasette import hookimpl
+from datasette_vite import vite_js_urls, vite_css_urls
+
+VITE_DEV_PATH = os.environ.get("VITE_DEV_PATH")
+
+@hookimpl
+def extra_js_urls(datasette):
+    return vite_js_urls(
+        datasette=datasette,
+        entrypoint="src/main.ts",
+        plugin_package="my_datasette_plugin",
+        vite_dev_path=VITE_DEV_PATH,
+    )
+
+@hookimpl
+def extra_css_urls(datasette):
+    return vite_css_urls(
+        datasette=datasette,
+        entrypoint="src/main.ts",
+        plugin_package="my_datasette_plugin",
+        vite_dev_path=VITE_DEV_PATH,
+    )
+```
+
+`vite_js_urls()` returns a list of `{"url": "...", "module": True}` dicts. In dev mode this includes the Vite client script; in prod mode it resolves the hashed filename from the manifest.
+
+`vite_css_urls()` returns a list of CSS URL strings. In dev mode this returns `[]` (Vite injects CSS via JS). In prod mode it collects all CSS from the entrypoint and recursively from imported chunks.
+
 ### API reference
 
-`vite_entry(datasette, plugin_package, vite_dev_path=None, manifest_dir=None)`
+#### `vite_entry(datasette, plugin_package, vite_dev_path=None, manifest_dir=None)`
 
 - **`datasette`**: The Datasette instance.
 - **`plugin_package`**: The Python package name of your plugin (used to resolve the manifest location and generate static asset URLs).
@@ -92,6 +125,14 @@ This produces:
 - **`manifest_dir`**: Optional path to the directory containing `manifest.json`. Defaults to the directory of your plugin package's `__init__.py`.
 
 Returns an async callable. Call it with an entrypoint path (matching a key in your Vite manifest) to get an HTML string of the corresponding `<script>` and `<link>` tags.
+
+#### `vite_js_urls(datasette, entrypoint, plugin_package, vite_dev_path=None, manifest_dir=None)`
+
+Returns a list of URL entries suitable for Datasette's `extra_js_urls` hook. Each entry is a `{"url": "...", "module": True}` dict.
+
+#### `vite_css_urls(datasette, entrypoint, plugin_package, vite_dev_path=None, manifest_dir=None)`
+
+Returns a list of CSS URL strings suitable for Datasette's `extra_css_urls` hook. Includes CSS from the entrypoint and recursively from imported chunks.
 
 ## Development
 

@@ -1,0 +1,12 @@
+.vite-banner {
+  background: #16213e;
+  color: #e2e2e2;
+  padding: 0.4rem 1rem;
+  font-family: system-ui, sans-serif;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.vite-banner a {
+  color: #7ec8e3;
+}
