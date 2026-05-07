@@ -20,6 +20,17 @@ class ManifestChunk(BaseModel):
     dynamicImports: Optional[list[str]] = None
 
 
+def _resolve_vite_dev_path(datasette, plugin_package: str) -> str | None:
+    config = datasette.plugin_config("datasette-vite") or {}
+    dev_paths = config.get("dev_paths") or {}
+    if plugin_package in dev_paths:
+        return dev_paths[plugin_package]
+    dev_ports = config.get("dev_ports") or {}
+    if plugin_package in dev_ports:
+        return f"http://localhost:{dev_ports[plugin_package]}/"
+    return None
+
+
 def _load_manifest(
     plugin_package: str,
     manifest_dir: str | Path | None = None,
@@ -77,9 +88,9 @@ def vite_js_urls(
     datasette,
     entrypoint: str,
     plugin_package: str,
-    vite_dev_path: str | None = None,
     manifest_dir: str | Path | None = None,
 ) -> list:
+    vite_dev_path = _resolve_vite_dev_path(datasette, plugin_package)
     if vite_dev_path:
         return [
             {"url": f"{vite_dev_path}@vite/client", "module": True},
@@ -98,9 +109,9 @@ def vite_css_urls(
     datasette,
     entrypoint: str,
     plugin_package: str,
-    vite_dev_path: str | None = None,
     manifest_dir: str | Path | None = None,
 ) -> list[str]:
+    vite_dev_path = _resolve_vite_dev_path(datasette, plugin_package)
     if vite_dev_path:
         return []
     manifest = _load_manifest(plugin_package, manifest_dir)
@@ -113,9 +124,9 @@ def vite_css_urls(
 def vite_entry(
     datasette,
     plugin_package: str,
-    vite_dev_path: str | None = None,
     manifest_dir: str | Path | None = None,
 ) -> Callable[[str], Awaitable[str]]:
+    vite_dev_path = _resolve_vite_dev_path(datasette, plugin_package)
     manifest: dict[str, ManifestChunk] = {}
     if not vite_dev_path:
         manifest = _load_manifest(plugin_package, manifest_dir)

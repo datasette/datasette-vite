@@ -15,19 +15,6 @@ async def test_plugin_is_installed():
 
 
 @pytest.mark.asyncio
-async def test_dev_mode():
-    datasette = Datasette(memory=True)
-    entry = vite_entry(
-        datasette=datasette,
-        plugin_package="datasette_vite",
-        vite_dev_path="http://localhost:5178/",
-    )
-    html = await entry("src/pages/index.ts")
-    assert '<script type="module" src="http://localhost:5178/@vite/client"></script>' in html
-    assert '<script type="module" src="http://localhost:5178/src/pages/index.ts"></script>' in html
-
-
-@pytest.mark.asyncio
 async def test_prod_mode(tmp_path):
     manifest = {
         "src/pages/index.ts": {
@@ -140,31 +127,6 @@ async def test_missing_manifest(tmp_path):
 # vite_js_urls / vite_css_urls tests
 
 
-def test_vite_js_urls_dev_mode():
-    datasette = Datasette(memory=True)
-    result = vite_js_urls(
-        datasette=datasette,
-        entrypoint="src/sidebar/index.ts",
-        plugin_package="datasette_vite",
-        vite_dev_path="http://localhost:5178/",
-    )
-    assert result == [
-        {"url": "http://localhost:5178/@vite/client", "module": True},
-        {"url": "http://localhost:5178/src/sidebar/index.ts", "module": True},
-    ]
-
-
-def test_vite_css_urls_dev_mode():
-    datasette = Datasette(memory=True)
-    result = vite_css_urls(
-        datasette=datasette,
-        entrypoint="src/sidebar/index.ts",
-        plugin_package="datasette_vite",
-        vite_dev_path="http://localhost:5178/",
-    )
-    assert result == []
-
-
 def test_vite_js_urls_prod_mode(tmp_path):
     manifest = {
         "src/sidebar/index.ts": {
@@ -247,3 +209,113 @@ def test_vite_css_urls_missing_entrypoint(tmp_path):
             plugin_package="datasette_vite",
             manifest_dir=tmp_path,
         )
+
+
+# Plugin-config resolution of dev path
+
+
+def _ds_with_vite_config(config):
+    return Datasette(memory=True, metadata={"plugins": {"datasette-vite": config}})
+
+
+@pytest.mark.asyncio
+async def test_vite_entry_dev_path_from_plugin_config():
+    datasette = _ds_with_vite_config(
+        {"dev_paths": {"datasette_vite": "http://localhost:5179/"}}
+    )
+    entry = vite_entry(datasette=datasette, plugin_package="datasette_vite")
+    html = await entry("src/pages/index.ts")
+    assert '<script type="module" src="http://localhost:5179/@vite/client"></script>' in html
+    assert '<script type="module" src="http://localhost:5179/src/pages/index.ts"></script>' in html
+
+
+@pytest.mark.asyncio
+async def test_vite_entry_dev_port_from_plugin_config():
+    datasette = _ds_with_vite_config({"dev_ports": {"datasette_vite": 5180}})
+    entry = vite_entry(datasette=datasette, plugin_package="datasette_vite")
+    html = await entry("src/pages/index.ts")
+    assert '<script type="module" src="http://localhost:5180/@vite/client"></script>' in html
+    assert '<script type="module" src="http://localhost:5180/src/pages/index.ts"></script>' in html
+
+
+@pytest.mark.asyncio
+async def test_plugin_config_only_for_matching_package(tmp_path):
+    manifest = {
+        "src/pages/index.ts": {
+            "file": "static/gen/index-abc123.js",
+            "src": "src/pages/index.ts",
+            "isEntry": True,
+        }
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+
+    datasette = _ds_with_vite_config(
+        {"dev_paths": {"some_other_plugin": "http://localhost:5179/"}}
+    )
+    entry = vite_entry(
+        datasette=datasette,
+        plugin_package="datasette_vite",
+        manifest_dir=tmp_path,
+    )
+    html = await entry("src/pages/index.ts")
+    # Falls through to manifest because the dev_paths entry is for a different package
+    assert '<script type="module" src="/-/static-plugins/datasette_vite/gen/index-abc123.js"></script>' in html
+    assert "5179" not in html
+
+
+def test_vite_js_urls_dev_path_from_plugin_config():
+    datasette = _ds_with_vite_config(
+        {"dev_paths": {"datasette_vite": "http://localhost:5179/"}}
+    )
+    result = vite_js_urls(
+        datasette=datasette,
+        entrypoint="src/sidebar/index.ts",
+        plugin_package="datasette_vite",
+    )
+    assert result == [
+        {"url": "http://localhost:5179/@vite/client", "module": True},
+        {"url": "http://localhost:5179/src/sidebar/index.ts", "module": True},
+    ]
+
+
+def test_vite_js_urls_dev_port_from_plugin_config():
+    datasette = _ds_with_vite_config({"dev_ports": {"datasette_vite": 5180}})
+    result = vite_js_urls(
+        datasette=datasette,
+        entrypoint="src/sidebar/index.ts",
+        plugin_package="datasette_vite",
+    )
+    assert result == [
+        {"url": "http://localhost:5180/@vite/client", "module": True},
+        {"url": "http://localhost:5180/src/sidebar/index.ts", "module": True},
+    ]
+
+
+def test_vite_css_urls_dev_path_from_plugin_config():
+    datasette = _ds_with_vite_config(
+        {"dev_paths": {"datasette_vite": "http://localhost:5179/"}}
+    )
+    result = vite_css_urls(
+        datasette=datasette,
+        entrypoint="src/sidebar/index.ts",
+        plugin_package="datasette_vite",
+    )
+    assert result == []
+
+
+def test_dev_paths_takes_precedence_over_dev_ports():
+    datasette = _ds_with_vite_config(
+        {
+            "dev_paths": {"datasette_vite": "http://localhost:5179/-/x/"},
+            "dev_ports": {"datasette_vite": 5180},
+        }
+    )
+    result = vite_js_urls(
+        datasette=datasette,
+        entrypoint="src/sidebar/index.ts",
+        plugin_package="datasette_vite",
+    )
+    assert result == [
+        {"url": "http://localhost:5179/-/x/@vite/client", "module": True},
+        {"url": "http://localhost:5179/-/x/src/sidebar/index.ts", "module": True},
+    ]

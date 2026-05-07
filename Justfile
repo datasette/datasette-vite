@@ -10,12 +10,12 @@ build-fixtures:
   cd tests/vite-fixtures/react-ts && npm install && npm run build
 
 dev *flags:
-  VITE_DEV_PATH="http://localhost:5174/" \
-    uv run datasette \
-      --plugins-dir example/plugins \
-      --template-dir example/templates \
-      --root \
-      {{flags}}
+  uv run datasette \
+    --plugins-dir example/plugins \
+    --template-dir example/templates \
+    --root \
+    -s plugins.datasette-vite.dev_paths.datasette_vite http://localhost:5174/ \
+    {{flags}}
 
 dev-vite *flags:
   npm run dev --prefix example {{flags}}
