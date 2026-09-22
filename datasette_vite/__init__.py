@@ -191,12 +191,10 @@ def vite_entry(
     plugin_package: str,
     manifest_dir: str | Path | None = None,
 ) -> Callable[[str], Awaitable[Markup]]:
-    vite_dev_path = _resolve_vite_dev_path(datasette, plugin_package)
-    manifest: dict[str, ManifestChunk] = {}
-    if not vite_dev_path:
-        manifest = _load_manifest(plugin_package, manifest_dir)
-
+    # Config and manifest are resolved on every call (the manifest is cached), so
+    # the returned callable can be created once and reused across requests.
     async def entry(entrypoint: str) -> Markup:
+        vite_dev_path = _resolve_vite_dev_path(datasette, plugin_package)
         if vite_dev_path:
             base = escape(vite_dev_path)
             return Markup(
@@ -204,6 +202,7 @@ def vite_entry(
                 f'<script type="module" src="{base}{escape(entrypoint)}"></script>'
             )
 
+        manifest = _load_manifest(plugin_package, manifest_dir)
         chunk = manifest.get(entrypoint)
         if not chunk:
             raise ValueError(f"Entrypoint {entrypoint} not found in manifest")

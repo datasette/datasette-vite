@@ -3,7 +3,7 @@
 ## Unreleased
 
 - New `ManifestError` exception (a `ValueError` subclass, exported from `datasette_vite`). Existing `except ValueError` / `pytest.raises(ValueError)` code keeps working.
-- A missing `manifest.json` now raises `ManifestError("Vite manifest not found at <path>...")` instead of the misleading `Entrypoint ... not found in manifest`. `vite_entry()` raises it when the factory is called.
+- A missing `manifest.json` now raises `ManifestError("Vite manifest not found at <path>...")` instead of the misleading `Entrypoint ... not found in manifest`. `vite_entry()` raises it when the returned callable is awaited.
 - Manifest paths that don't start with `static/` (e.g. Vite's default `assets/`) or that contain `..` now raise `ManifestError` with an actionable message instead of a cryptic `relative_to` error.
 - Dotted `plugin_package` names (e.g. `mycompany.datasette_thing`) now resolve the manifest in the leaf package directory rather than the top-level package.
 - A namespace package without `__file__` now raises `ManifestError` (previously an `assert`, stripped under `python -O`).
@@ -12,6 +12,7 @@
 - `dev_paths` values are now validated: they must be `http(s)://` URLs with a host, and a missing trailing `/` is added (previously `http://localhost:5173` produced the broken URL `http://localhost:5173@vite/client`). `dev_ports` values must be integers (or digit strings) in 1–65535. Invalid values raise `ValueError`.
 - `vite_css_urls()` and `vite_entry()` no longer emit duplicate stylesheet URLs when chunks share a CSS file or an imported chunk imports the entrypoint back.
 - Parsed manifests are now cached per manifest path and modification time, so `vite_js_urls()` / `vite_css_urls()` in `extra_js_urls` / `extra_css_urls` hooks no longer re-read and re-parse `manifest.json` on every page render. A rebuilt manifest is picked up without a restart.
+- The callable returned by `vite_entry()` now resolves the dev-mode setting and loads the manifest each time it is awaited, rather than once when `vite_entry()` is called. It is now safe to create it once (e.g. in a `startup` hook) and reuse it. As a consequence, errors such as a missing manifest are raised when the callable is awaited, not by `vite_entry()` itself.
 
 ## 0.0.1a4
 

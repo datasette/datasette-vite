@@ -586,3 +586,25 @@ def test_rebuilt_manifest_is_picked_up(tmp_path):
     )
     os.utime(path, (1_000_000_100, 1_000_000_100))
     assert js_url().endswith("/main-new.js")
+
+
+@pytest.mark.asyncio
+async def test_vite_entry_reads_config_on_each_call(tmp_path):
+    manifest = {"src/main.ts": {"file": "static/main-abc.js", "isEntry": True}}
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    datasette = Datasette(memory=True)
+    entry = vite_entry(
+        datasette=datasette,
+        plugin_package="datasette_vite",
+        manifest_dir=tmp_path,
+    )
+    html = await entry("src/main.ts")
+    assert 'src="/-/static-plugins/datasette_vite/main-abc.js"' in html
+
+    # On Datasette 1.0a, plugin_config() reads from datasette.config
+    datasette.config = {
+        "plugins": {"datasette-vite": {"dev_ports": {"datasette_vite": 5181}}}
+    }
+    html = await entry("src/main.ts")
+    assert '<script type="module" src="http://localhost:5181/@vite/client"></script>' in html
+    assert "main-abc.js" not in html
