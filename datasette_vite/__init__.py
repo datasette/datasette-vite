@@ -116,30 +116,26 @@ def _collect_css_urls(
     manifest: dict[str, ManifestChunk],
     entrypoint: str,
 ) -> list[str]:
-    chunk = manifest.get(entrypoint)
-    if not chunk:
-        return []
-    urls = []
-    for css in chunk.css or []:
-        urls.append(_static_url(datasette, plugin_package, css))
+    urls: list[str] = []
+    seen_chunks: set[str] = set()
+    seen_urls: set[str] = set()
 
-    seen = set()
-
-    def collect_import_css(chunk_key):
-        if chunk_key in seen:
+    def visit(chunk_key: str) -> None:
+        if chunk_key in seen_chunks:
             return
-        seen.add(chunk_key)
-        imp_chunk = manifest.get(chunk_key)
-        if not imp_chunk:
+        seen_chunks.add(chunk_key)
+        chunk = manifest.get(chunk_key)
+        if not chunk:
             return
-        for css in imp_chunk.css or []:
-            urls.append(_static_url(datasette, plugin_package, css))
-        for sub_import in imp_chunk.imports or []:
-            collect_import_css(sub_import)
+        for css in chunk.css or []:
+            url = _static_url(datasette, plugin_package, css)
+            if url not in seen_urls:
+                seen_urls.add(url)
+                urls.append(url)
+        for imp in chunk.imports or []:
+            visit(imp)
 
-    for imp in chunk.imports or []:
-        collect_import_css(imp)
-
+    visit(entrypoint)
     return urls
 
 

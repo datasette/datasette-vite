@@ -10,6 +10,7 @@
 - **Return type change:** the callable returned by `vite_entry()` now returns `markupsafe.Markup` instead of `str`, with every interpolated URL and entrypoint HTML-escaped. `Markup` is a `str` subclass, so existing string handling and `|safe` filters keep working; you can now drop `|safe` from templates. The dev-mode output no longer has leading/trailing blank lines.
 - `markupsafe` is now a declared dependency (it was already installed via Jinja2).
 - `dev_paths` values are now validated: they must be `http(s)://` URLs with a host, and a missing trailing `/` is added (previously `http://localhost:5173` produced the broken URL `http://localhost:5173@vite/client`). `dev_ports` values must be integers (or digit strings) in 1–65535. Invalid values raise `ValueError`.
+- `vite_css_urls()` and `vite_entry()` no longer emit duplicate stylesheet URLs when chunks share a CSS file or an imported chunk imports the entrypoint back.
 
 ## 0.0.1a4
 

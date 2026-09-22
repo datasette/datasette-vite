@@ -502,3 +502,35 @@ def test_dev_ports_rejects_out_of_range(port):
             entrypoint="src/main.ts",
             plugin_package="datasette_vite",
         )
+
+
+def test_vite_css_urls_dedupes_cycles_and_shared_css(tmp_path):
+    manifest = {
+        "src/main.ts": {
+            "file": "static/main-abc.js",
+            "isEntry": True,
+            "css": ["static/main-abc.css", "static/shared-ddd.css"],
+            "imports": ["_shared.js", "_other.js"],
+        },
+        "_shared.js": {
+            "file": "static/shared.js",
+            "css": ["static/shared-ddd.css", "static/only-shared.css"],
+            "imports": ["src/main.ts"],
+        },
+        "_other.js": {
+            "file": "static/other.js",
+            "css": ["static/main-abc.css"],
+        },
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    result = vite_css_urls(
+        datasette=Datasette(memory=True),
+        entrypoint="src/main.ts",
+        plugin_package="datasette_vite",
+        manifest_dir=tmp_path,
+    )
+    assert result == [
+        "/-/static-plugins/datasette_vite/main-abc.css",
+        "/-/static-plugins/datasette_vite/shared-ddd.css",
+        "/-/static-plugins/datasette_vite/only-shared.css",
+    ]
