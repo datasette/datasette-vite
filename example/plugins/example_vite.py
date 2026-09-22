@@ -1,14 +1,5 @@
 from datasette import hookimpl
-from datasette_vite import vite_entry, vite_js_urls, vite_css_urls
-
-
-@hookimpl
-async def extra_template_vars(datasette):
-    entry = vite_entry(
-        datasette=datasette,
-        plugin_package="datasette_vite",
-    )
-    return {"vite_page_head": await entry("src/page/main.ts")}
+from datasette_vite import vite_js_urls, vite_css_urls
 
 
 @hookimpl

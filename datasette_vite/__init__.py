@@ -189,6 +189,36 @@ def vite_css_urls(
     return _collect_css_urls(datasette, plugin_package, manifest, entrypoint)
 
 
+def _render_entry(
+    datasette,
+    plugin_package: str,
+    entrypoint: str,
+    manifest_dir: str | Path | None = None,
+) -> Markup:
+    vite_dev_path = _resolve_vite_dev_path(datasette, plugin_package)
+    if vite_dev_path:
+        base = escape(vite_dev_path)
+        return Markup(
+            f'<script type="module" src="{base}@vite/client"></script>\n'
+            f'<script type="module" src="{base}{escape(entrypoint)}"></script>'
+        )
+
+    manifest = _load_manifest(plugin_package, manifest_dir)
+    chunk = manifest.get(entrypoint)
+    if not chunk:
+        raise ValueError(f"Entrypoint {entrypoint} not found in manifest")
+    parts = []
+
+    css_urls = _collect_css_urls(datasette, plugin_package, manifest, entrypoint)
+    for href in css_urls:
+        parts.append(Markup(f'<link rel="stylesheet" href="{escape(href)}">'))
+
+    src = _static_url(datasette, plugin_package, chunk.file)
+    parts.append(Markup(f'<script type="module" src="{escape(src)}"></script>'))
+
+    return Markup("\n").join(parts)
+
+
 def vite_entry(
     datasette,
     plugin_package: str,
@@ -197,30 +227,21 @@ def vite_entry(
     # Config and manifest are resolved on every call (the manifest is cached), so
     # the returned callable can be created once and reused across requests.
     async def entry(entrypoint: str) -> Markup:
-        vite_dev_path = _resolve_vite_dev_path(datasette, plugin_package)
-        if vite_dev_path:
-            base = escape(vite_dev_path)
-            return Markup(
-                f'<script type="module" src="{base}@vite/client"></script>\n'
-                f'<script type="module" src="{base}{escape(entrypoint)}"></script>'
-            )
-
-        manifest = _load_manifest(plugin_package, manifest_dir)
-        chunk = manifest.get(entrypoint)
-        if not chunk:
-            raise ValueError(f"Entrypoint {entrypoint} not found in manifest")
-        parts = []
-
-        css_urls = _collect_css_urls(datasette, plugin_package, manifest, entrypoint)
-        for href in css_urls:
-            parts.append(Markup(f'<link rel="stylesheet" href="{escape(href)}">'))
-
-        src = _static_url(datasette, plugin_package, chunk.file)
-        parts.append(Markup(f'<script type="module" src="{escape(src)}"></script>'))
-
-        return Markup("\n").join(parts)
+        return _render_entry(datasette, plugin_package, entrypoint, manifest_dir)
 
     return entry
+
+
+@hookimpl
+def prepare_jinja2_environment(env, datasette):
+    def vite_entry_global(
+        plugin_package: str,
+        entrypoint: str,
+        manifest_dir: str | Path | None = None,
+    ) -> Markup:
+        return _render_entry(datasette, plugin_package, entrypoint, manifest_dir)
+
+    env.globals["vite_entry"] = vite_entry_global
 
 
 @hookimpl
