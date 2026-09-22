@@ -18,6 +18,7 @@
 - `vite_entry()` (and the Jinja global) now emits `<link rel="modulepreload">` for every chunk in the entrypoint's transitive static `imports`, between the stylesheet links and the entry script, as the Vite backend-integration guide recommends. `dynamicImports` are not preloaded. `vite_js_urls()` cannot carry preload hints.
 - New keyword-only `nonce=` and `crossorigin=` options on `vite_entry()` and the Jinja global add those attributes to every emitted `<script>` and `<link>` tag, for sites with a nonce-based Content Security Policy or cross-origin assets. Output is unchanged when neither is passed. `vite_js_urls()` / `vite_css_urls()` cannot carry them because Datasette's `extra_js_urls` / `extra_css_urls` only support `url`, `module` and `sri`.
 - New keyword-only `react=` option on `vite_entry()`, the Jinja global and `vite_js_urls()`. In dev mode it adds the React Refresh preamble that `@vitejs/plugin-react` needs for HMR: inline before the entry for `vite_entry()`, or, for `vite_js_urls()`, as a new `/-/vite/react-preamble.js?plugin_package=...` script ahead of `@vite/client` (served from the configured dev path; 404 for packages not in dev mode). No effect in production.
+- New `/-/vite` diagnostics page (and `/-/vite.json`), linked from the debug menu, showing resolved mode/dev URL/manifest status/entrypoints per known package. Gated on `view-instance` + `debug-menu`, so anonymous requests get a 403.
 
 ## 0.0.1a4
 

@@ -1,4 +1,5 @@
 from datasette import hookimpl
+from datasette.plugins import pm
 from datasette.utils.asgi import Response
 from markupsafe import Markup, escape
 from pathlib import Path
@@ -365,3 +366,131 @@ def startup(datasette):
             "Vite dev server. Do not deploy with this setting.",
             ", ".join(sorted(packages)),
         )
+
+
+# /-/vite diagnostics page. Read-only; shows per known package what datasette-vite
+# resolved (mode, dev URL or config error, manifest path/presence, entrypoints).
+# Gated on "view-instance" + "debug-menu": "view-instance" alone is in Datasette's
+# DEFAULT_ALLOW_ACTIONS and so is granted to anonymous actors, while "debug-menu"
+# is what Datasette's own default_debug_menu.py uses to surface its debug pages.
+
+
+async def _vite_ensure_diagnostics_permission(datasette, actor):
+    await datasette.ensure_permission(action="view-instance", actor=actor)
+    await datasette.ensure_permission(action="debug-menu", actor=actor)
+
+
+def _vite_known_packages(datasette) -> dict[str, Path | None]:
+    """Return {package: manifest_dir} for every package datasette-vite knows
+    about: the union of configured dev_paths/dev_ports keys, and every
+    installed plugin whose package directory contains a manifest.json.
+
+    `manifest_dir` is the directory to pass straight through as manifest_dir=
+    (bypassing package import) for packages discovered by scanning plugin
+    module files; it is None for config-only entries, which fall back to
+    _manifest_path()'s usual "import the package" behavior.
+    """
+    config = datasette.plugin_config("datasette-vite") or {}
+    packages: dict[str, Path | None] = {
+        name: None
+        for name in {
+            **(config.get("dev_paths") or {}),
+            **(config.get("dev_ports") or {}),
+        }
+    }
+    for plugin in pm.get_plugins():
+        name = getattr(plugin, "__name__", None) or plugin.__class__.__name__
+        mod_file = getattr(plugin, "__file__", None)
+        if not mod_file:
+            continue
+        plugin_dir = Path(mod_file).parent
+        if (plugin_dir / "manifest.json").exists():
+            packages[name] = plugin_dir
+    return packages
+
+
+def _vite_package_diagnostics(
+    datasette, package: str, manifest_dir: Path | None
+) -> dict:
+    config = datasette.plugin_config("datasette-vite") or {}
+    dev_configured = package in (config.get("dev_paths") or {}) or package in (
+        config.get("dev_ports") or {}
+    )
+    row = {
+        "package": package,
+        "mode": "dev" if dev_configured else "prod",
+        "dev_url": None,
+        "dev_error": None,
+        "manifest_path": None,
+        "manifest_found": False,
+        "entrypoints": [],
+    }
+    if dev_configured:
+        try:
+            row["dev_url"] = _resolve_vite_dev_path(datasette, package)
+        except ValueError as exc:
+            row["dev_error"] = str(exc)
+
+    try:
+        manifest_path = _manifest_path(package, manifest_dir)
+    except (ManifestError, ImportError):
+        return row
+    row["manifest_path"] = str(manifest_path)
+    row["manifest_found"] = manifest_path.exists()
+    if row["manifest_found"]:
+        try:
+            manifest = _load_manifest(package, manifest_dir)
+        except (ManifestError, ImportError):
+            pass
+        else:
+            row["entrypoints"] = sorted(
+                key for key, chunk in manifest.items() if chunk.isEntry
+            )
+    return row
+
+
+def _vite_diagnostics_rows(datasette) -> list[dict]:
+    packages = _vite_known_packages(datasette)
+    return [
+        _vite_package_diagnostics(datasette, package, manifest_dir)
+        for package, manifest_dir in sorted(packages.items())
+    ]
+
+
+async def _vite_diagnostics_view(datasette, request):
+    await _vite_ensure_diagnostics_permission(datasette, request.actor)
+    rows = _vite_diagnostics_rows(datasette)
+    dev_mode = any(row["mode"] == "dev" for row in rows)
+    if request.url_vars.get("format") == "json":
+        return Response.json({"ok": True, "dev_mode": dev_mode, "packages": rows})
+    return Response.html(
+        await datasette.render_template(
+            "vite.html",
+            {"packages": rows, "dev_mode": dev_mode},
+            request=request,
+        )
+    )
+
+
+@hookimpl
+def register_routes():
+    return [
+        (r"^/-/vite(\.(?P<format>json))?$", _vite_diagnostics_view),
+    ]
+
+
+@hookimpl
+def menu_links(datasette, actor):
+    async def inner():
+        if not await datasette.allowed(
+            action="view-instance", actor=actor
+        ) or not await datasette.allowed(action="debug-menu", actor=actor):
+            return []
+        return [
+            {
+                "href": datasette.urls.path("/-/vite"),
+                "label": "Vite diagnostics",
+            }
+        ]
+
+    return inner

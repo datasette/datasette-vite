@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Vite diagnostics{% endblock %}
+
+{% block body_class %}vite-diagnostics{% endblock %}
+
+{% block content %}
+<h1>Vite diagnostics</h1>
+
+<p>
+  Resolved <code>datasette-vite</code> configuration for every known package.
+  Read-only &mdash; nothing shown here is not already visible on
+  <a href="{{ urls.path("/-/settings") }}">/-/settings</a> or
+  <a href="{{ urls.path("/-/plugins") }}">/-/plugins</a>.
+  A <a href="{{ urls.path("/-/vite.json") }}">JSON version</a> is also available.
+</p>
+
+{% if dev_mode %}
+<div class="vite-dev-banner" style="background: #fdd; border: 1px solid #cc0000; color: #900; padding: 0.75em 1em; margin-bottom: 1em; border-radius: 4px;">
+  <strong>Dev mode is ON</strong> for one or more packages below. Pages will load
+  assets from a Vite dev server. Do not deploy with this configuration.
+</div>
+{% endif %}
+
+{% if packages %}
+<table class="rows-and-columns">
+  <thead>
+    <tr>
+      <th>Package</th>
+      <th>Mode</th>
+      <th>Dev URL</th>
+      <th>Manifest path</th>
+      <th>Manifest found</th>
+      <th>Entrypoints</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in packages %}
+    <tr>
+      <td>{{ row.package }}</td>
+      <td>{{ row.mode }}</td>
+      <td>
+        {% if row.dev_error %}<em>Invalid config: {{ row.dev_error }}</em>
+        {%- elif row.dev_url %}{{ row.dev_url }}
+        {%- endif %}
+      </td>
+      <td>{{ row.manifest_path or "" }}</td>
+      <td>{{ "yes" if row.manifest_found else "no" }}</td>
+      <td>{{ row.entrypoints|join(", ") }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No datasette-vite packages found — no <code>dev_paths</code>/<code>dev_ports</code>
+configured, and no installed plugin has a <code>manifest.json</code>.</p>
+{% endif %}
+
+{% endblock %}
