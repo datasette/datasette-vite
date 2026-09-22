@@ -10,8 +10,8 @@ classifiers=[
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "datasette",
-    "pydantic"
+    "datasette>=1.0a0",
+    "pydantic>=2"
 ]
 
 [dependency-groups]
@@ -45,4 +45,7 @@ markers = [
 
 [tool.setuptools.package-data]
 datasette_vite = ["static/*", "templates/*"]
+
+[tool.uv]
+prerelease = "allow"
 
