@@ -54,7 +54,28 @@ Declare them in `pyproject.toml` so `pip install .` picks them up too:
 your_plugin_package = ["manifest.json", "static/**/*", "templates/**/*"]
 ```
 
+### Using the `vite_entry()` template function
+
+If your plugin owns a template, this is the simplest option. datasette-vite registers a
+`vite_entry()` Jinja global, so any template can render the tags for an entrypoint with no
+Python hook at all:
+
+```html+jinja
+{% extends "base.html" %}
+
+{% block extra_head %}
+{{ vite_entry("my_datasette_plugin", "src/main.ts") }}
+{% endblock %}
+```
+
+The arguments are the plugin package and the entrypoint; an optional third argument is the
+`manifest_dir` (see the API reference). The output is the same `Markup` that the Python
+`vite_entry()` factory produces below, and it follows the same dev-mode settings.
+
 ### Using `vite_entry()` in your plugin
+
+To build the tags in Python instead (for example to pass them to a template you render
+yourself), use the `vite_entry()` factory:
 
 ```python
 from datasette_vite import vite_entry
@@ -158,6 +179,10 @@ Dev-mode behavior is controlled by the same `plugins.datasette-vite.dev_paths` /
 - **`manifest_dir`**: Optional path to the directory containing `manifest.json`. Defaults to the directory of your plugin package's `__init__.py`.
 
 Returns an async callable. Call it with an entrypoint path (matching a key in your Vite manifest) to get a `markupsafe.Markup` string of the corresponding `<script>` and `<link>` tags. All attribute values are HTML-escaped, so the result is safe to render in a Jinja template without `|safe`.
+
+#### `{{ vite_entry(plugin_package, entrypoint, manifest_dir=None) }}` (Jinja global)
+
+Available in every Datasette template. Returns the same `markupsafe.Markup` as awaiting the callable from `vite_entry()`; it is synchronous, so no `await` is needed in the template.
 
 #### Dev-mode resolution order
 

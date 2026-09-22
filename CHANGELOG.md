@@ -14,6 +14,7 @@
 - Parsed manifests are now cached per manifest path and modification time, so `vite_js_urls()` / `vite_css_urls()` in `extra_js_urls` / `extra_css_urls` hooks no longer re-read and re-parse `manifest.json` on every page render. A rebuilt manifest is picked up without a restart.
 - The callable returned by `vite_entry()` now resolves the dev-mode setting and loads the manifest each time it is awaited, rather than once when `vite_entry()` is called. It is now safe to create it once (e.g. in a `startup` hook) and reuse it. As a consequence, errors such as a missing manifest are raised when the callable is awaited, not by `vite_entry()` itself.
 - datasette-vite now logs a warning at startup when any `dev_paths` / `dev_ports` entry is configured, naming the packages in dev mode, so dev settings accidentally left in a deployed config are visible in the logs.
+- New `vite_entry(plugin_package, entrypoint)` Jinja global, registered via `prepare_jinja2_environment`, so templates can write `{{ vite_entry("my_plugin", "src/main.ts") }}` without an `extra_template_vars` hook. The `vite_entry()` Python factory is unchanged.
 
 ## 0.0.1a4
 

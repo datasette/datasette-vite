@@ -633,3 +633,61 @@ async def test_startup_silent_without_dev_config(caplog):
     datasette = Datasette(memory=True)
     await datasette.invoke_startup()
     assert "dev mode is ON" not in caplog.text
+
+
+# Jinja global
+
+
+def _page_template(tmp_path, body):
+    pages = tmp_path / "templates" / "pages"
+    pages.mkdir(parents=True)
+    (pages / "vite-test.html").write_text(body)
+    return str(tmp_path / "templates")
+
+
+@pytest.mark.asyncio
+async def test_jinja_global_renders_entry(tmp_path):
+    manifest = {
+        "src/pages/index.ts": {
+            "file": "static/gen/index-abc123.js",
+            "isEntry": True,
+            "css": ["static/gen/index-def456.css"],
+        }
+    }
+    manifest_dir = tmp_path / "manifest"
+    manifest_dir.mkdir()
+    (manifest_dir / "manifest.json").write_text(json.dumps(manifest))
+    template_dir = _page_template(
+        tmp_path,
+        '{{ vite_entry("datasette_vite", "src/pages/index.ts", "%s") }}' % manifest_dir,
+    )
+    datasette = Datasette(memory=True, template_dir=template_dir)
+    response = await datasette.client.get("/vite-test")
+    assert response.status_code == 200
+    assert (
+        '<link rel="stylesheet" href="/-/static-plugins/datasette_vite/gen/index-def456.css">'
+        in response.text
+    )
+    assert (
+        '<script type="module" src="/-/static-plugins/datasette_vite/gen/index-abc123.js"></script>'
+        in response.text
+    )
+    assert "&lt;" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_jinja_global_dev_mode(tmp_path):
+    template_dir = _page_template(
+        tmp_path, '{{ vite_entry("datasette_vite", "src/main.ts") }}'
+    )
+    datasette = Datasette(
+        memory=True,
+        template_dir=template_dir,
+        metadata={"plugins": {"datasette-vite": {"dev_ports": {"datasette_vite": 5182}}}},
+    )
+    response = await datasette.client.get("/vite-test")
+    assert response.status_code == 200
+    assert (
+        '<script type="module" src="http://localhost:5182/src/main.ts"></script>'
+        in response.text
+    )
