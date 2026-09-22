@@ -15,6 +15,8 @@
 - The callable returned by `vite_entry()` now resolves the dev-mode setting and loads the manifest each time it is awaited, rather than once when `vite_entry()` is called. It is now safe to create it once (e.g. in a `startup` hook) and reuse it. As a consequence, errors such as a missing manifest are raised when the callable is awaited, not by `vite_entry()` itself.
 - datasette-vite now logs a warning at startup when any `dev_paths` / `dev_ports` entry is configured, naming the packages in dev mode, so dev settings accidentally left in a deployed config are visible in the logs.
 - New `vite_entry(plugin_package, entrypoint)` Jinja global, registered via `prepare_jinja2_environment`, so templates can write `{{ vite_entry("my_plugin", "src/main.ts") }}` without an `extra_template_vars` hook. The `vite_entry()` Python factory is unchanged.
+- `vite_entry()` (and the Jinja global) now emits `<link rel="modulepreload">` for every chunk in the entrypoint's transitive static `imports`, between the stylesheet links and the entry script, as the Vite backend-integration guide recommends. `dynamicImports` are not preloaded. `vite_js_urls()` cannot carry preload hints.
+- New keyword-only `nonce=` and `crossorigin=` options on `vite_entry()` and the Jinja global add those attributes to every emitted `<script>` and `<link>` tag, for sites with a nonce-based Content Security Policy or cross-origin assets. Output is unchanged when neither is passed. `vite_js_urls()` / `vite_css_urls()` cannot carry them because Datasette's `extra_js_urls` / `extra_css_urls` only support `url`, `module` and `sri`.
 
 ## 0.0.1a4
 

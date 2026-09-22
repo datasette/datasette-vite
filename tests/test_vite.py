@@ -98,6 +98,40 @@ async def test_prod_mode_imported_chunk_css(tmp_path):
     assert '<link rel="stylesheet" href="/-/static-plugins/datasette_vite/gen/deep-ccc333.css">' in html
     # The JS entry script
     assert '<script type="module" src="/-/static-plugins/datasette_vite/gen/index-abc123.js"></script>' in html
+    # CSS links, then modulepreloads for imported chunks (depth-first), then the entry
+    assert html.splitlines() == [
+        '<link rel="stylesheet" href="/-/static-plugins/datasette_vite/gen/index-def456.css">',
+        '<link rel="stylesheet" href="/-/static-plugins/datasette_vite/gen/shared-aaa111.css">',
+        '<link rel="stylesheet" href="/-/static-plugins/datasette_vite/gen/deep-ccc333.css">',
+        '<link rel="modulepreload" href="/-/static-plugins/datasette_vite/gen/shared-xyz789.js">',
+        '<link rel="modulepreload" href="/-/static-plugins/datasette_vite/gen/deep-bbb222.js">',
+        '<script type="module" src="/-/static-plugins/datasette_vite/gen/index-abc123.js"></script>',
+    ]
+
+
+@pytest.mark.asyncio
+async def test_prod_mode_no_modulepreload_for_dynamic_imports(tmp_path):
+    manifest = {
+        "src/main.ts": {
+            "file": "static/main-abc.js",
+            "isEntry": True,
+            "imports": ["_shared.js", "src/main.ts"],
+            "dynamicImports": ["src/lazy.ts"],
+        },
+        "_shared.js": {"file": "static/shared.js"},
+        "src/lazy.ts": {"file": "static/lazy.js", "isDynamicEntry": True},
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    entry = vite_entry(
+        datasette=Datasette(memory=True),
+        plugin_package="datasette_vite",
+        manifest_dir=tmp_path,
+    )
+    html = await entry("src/main.ts")
+    assert html.splitlines() == [
+        '<link rel="modulepreload" href="/-/static-plugins/datasette_vite/shared.js">',
+        '<script type="module" src="/-/static-plugins/datasette_vite/main-abc.js"></script>',
+    ]
 
 
 @pytest.mark.asyncio
@@ -689,5 +723,103 @@ async def test_jinja_global_dev_mode(tmp_path):
     assert response.status_code == 200
     assert (
         '<script type="module" src="http://localhost:5182/src/main.ts"></script>'
+        in response.text
+    )
+
+
+# nonce / crossorigin
+
+
+def _split_manifest(tmp_path):
+    manifest = {
+        "src/main.ts": {
+            "file": "static/main-abc.js",
+            "isEntry": True,
+            "css": ["static/main-abc.css"],
+            "imports": ["_shared.js"],
+        },
+        "_shared.js": {"file": "static/shared.js", "css": ["static/shared.css"]},
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+
+
+@pytest.mark.asyncio
+async def test_nonce_and_crossorigin_on_every_prod_tag(tmp_path):
+    _split_manifest(tmp_path)
+    entry = vite_entry(
+        datasette=Datasette(memory=True),
+        plugin_package="datasette_vite",
+        manifest_dir=tmp_path,
+        nonce="abc",
+        crossorigin="anonymous",
+    )
+    html = await entry("src/main.ts")
+    assert html.splitlines() == [
+        '<link rel="stylesheet" href="/-/static-plugins/datasette_vite/main-abc.css" nonce="abc" crossorigin="anonymous">',
+        '<link rel="stylesheet" href="/-/static-plugins/datasette_vite/shared.css" nonce="abc" crossorigin="anonymous">',
+        '<link rel="modulepreload" href="/-/static-plugins/datasette_vite/shared.js" nonce="abc" crossorigin="anonymous">',
+        '<script type="module" src="/-/static-plugins/datasette_vite/main-abc.js" nonce="abc" crossorigin="anonymous"></script>',
+    ]
+
+
+@pytest.mark.asyncio
+async def test_nonce_and_crossorigin_in_dev_mode():
+    datasette = _ds_with_vite_config({"dev_ports": {"datasette_vite": 5180}})
+    entry = vite_entry(
+        datasette=datasette,
+        plugin_package="datasette_vite",
+        nonce="abc",
+        crossorigin="",
+    )
+    html = await entry("src/main.ts")
+    assert html == (
+        '<script type="module" src="http://localhost:5180/@vite/client" nonce="abc" crossorigin></script>\n'
+        '<script type="module" src="http://localhost:5180/src/main.ts" nonce="abc" crossorigin></script>'
+    )
+
+
+@pytest.mark.asyncio
+async def test_nonce_and_crossorigin_are_escaped(tmp_path):
+    _split_manifest(tmp_path)
+    entry = vite_entry(
+        datasette=Datasette(memory=True),
+        plugin_package="datasette_vite",
+        manifest_dir=tmp_path,
+        nonce='"><script>',
+        crossorigin='use-credentials"',
+    )
+    html = await entry("src/main.ts")
+    assert "<script>" not in html
+    assert 'nonce="&#34;&gt;&lt;script&gt;"' in html
+    assert 'crossorigin="use-credentials&#34;"' in html
+
+
+@pytest.mark.asyncio
+async def test_no_nonce_or_crossorigin_by_default(tmp_path):
+    _split_manifest(tmp_path)
+    entry = vite_entry(
+        datasette=Datasette(memory=True),
+        plugin_package="datasette_vite",
+        manifest_dir=tmp_path,
+    )
+    html = await entry("src/main.ts")
+    assert "nonce" not in html
+    assert "crossorigin" not in html
+
+
+@pytest.mark.asyncio
+async def test_jinja_global_accepts_nonce(tmp_path):
+    template_dir = _page_template(
+        tmp_path,
+        '{{ vite_entry("datasette_vite", "src/main.ts", nonce="n1", crossorigin="anonymous") }}',
+    )
+    datasette = Datasette(
+        memory=True,
+        template_dir=template_dir,
+        metadata={"plugins": {"datasette-vite": {"dev_ports": {"datasette_vite": 5182}}}},
+    )
+    response = await datasette.client.get("/vite-test")
+    assert (
+        '<script type="module" src="http://localhost:5182/src/main.ts" nonce="n1" crossorigin="anonymous"></script>'
         in response.text
     )
