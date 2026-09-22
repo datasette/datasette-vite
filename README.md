@@ -27,7 +27,7 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   build: {
-    manifest: true,
+    manifest: 'manifest.json',
     outDir: 'dist',
     rollupOptions: {
       input: 'src/main.ts',
@@ -41,7 +41,18 @@ export default defineConfig({
 })
 ```
 
-After running `vite build`, copy `dist/.vite/manifest.json` and `dist/static/` into your plugin's Python package directory so they are included when your plugin is installed.
+Setting `manifest: 'manifest.json'` (rather than `manifest: true`) writes the manifest
+to `dist/manifest.json` instead of `dist/.vite/manifest.json`, so there's one fewer
+hidden directory to copy from.
+
+After running `vite build`, copy `dist/manifest.json` and `dist/static/` into your
+plugin's Python package directory so they are included when your plugin is installed.
+Declare them in `pyproject.toml` so `pip install .` picks them up too:
+
+```toml
+[tool.setuptools.package-data]
+your_plugin_package = ["manifest.json", "static/**/*", "templates/**/*"]
+```
 
 ### Using `vite_entry()` in your plugin
 
@@ -165,4 +176,10 @@ uv run datasette plugins
 To run the tests:
 ```bash
 uv run pytest
+```
+
+To try the example plugin in production mode, build it first (requires Node) — the build output under `datasette_vite/` is git-ignored:
+```bash
+just build-example
+just dev-prod
 ```

@@ -14,3 +14,5 @@ uv.lock
 tests/vite-fixtures/*/node_modules/
 tests/vite-fixtures/*/dist/
 example/node_modules/
+datasette_vite/manifest.json
+datasette_vite/static/
