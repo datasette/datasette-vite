@@ -43,6 +43,9 @@ markers = [
     "browser: Playwright browser tests (require built fixtures + browser binaries)",
 ]
 
+[tool.setuptools]
+packages = ["datasette_vite"]
+
 [tool.setuptools.package-data]
 datasette_vite = ["manifest.json", "static/**/*", "templates/**/*"]
 
