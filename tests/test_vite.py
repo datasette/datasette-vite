@@ -823,3 +823,168 @@ async def test_jinja_global_accepts_nonce(tmp_path):
         '<script type="module" src="http://localhost:5182/src/main.ts" nonce="n1" crossorigin="anonymous"></script>'
         in response.text
     )
+
+
+# React Refresh preamble
+
+REACT_PREAMBLE_5180 = (
+    'import RefreshRuntime from "http://localhost:5180/@react-refresh"\n'
+    "RefreshRuntime.injectIntoGlobalHook(window)\n"
+    "window.$RefreshReg$ = () => {}\n"
+    "window.$RefreshSig$ = () => (type) => type\n"
+    "window.__vite_plugin_react_preamble_installed__ = true\n"
+)
+
+
+@pytest.mark.asyncio
+async def test_react_preamble_in_dev_mode():
+    datasette = _ds_with_vite_config({"dev_ports": {"datasette_vite": 5180}})
+    entry = vite_entry(datasette=datasette, plugin_package="datasette_vite", react=True)
+    html = await entry("src/main.tsx")
+    assert html == (
+        '<script type="module">\n'
+        + REACT_PREAMBLE_5180
+        + "</script>\n"
+        '<script type="module" src="http://localhost:5180/@vite/client"></script>\n'
+        '<script type="module" src="http://localhost:5180/src/main.tsx"></script>'
+    )
+
+
+@pytest.mark.asyncio
+async def test_react_preamble_absent_without_flag():
+    datasette = _ds_with_vite_config({"dev_ports": {"datasette_vite": 5180}})
+    entry = vite_entry(datasette=datasette, plugin_package="datasette_vite")
+    html = await entry("src/main.tsx")
+    assert "@react-refresh" not in html
+    assert "__vite_plugin_react_preamble_installed__" not in html
+
+
+@pytest.mark.asyncio
+async def test_react_preamble_honours_nonce():
+    datasette = _ds_with_vite_config({"dev_ports": {"datasette_vite": 5180}})
+    entry = vite_entry(
+        datasette=datasette,
+        plugin_package="datasette_vite",
+        react=True,
+        nonce="abc",
+        crossorigin="anonymous",
+    )
+    html = await entry("src/main.tsx")
+    assert html.startswith('<script type="module" nonce="abc">\n')
+    assert html.count('nonce="abc"') == 3
+
+
+@pytest.mark.asyncio
+async def test_react_preamble_js_escapes_dev_path():
+    datasette = _ds_with_vite_config(
+        {"dev_paths": {"datasette_vite": 'http://localhost:5179/</script>"x/'}}
+    )
+    entry = vite_entry(datasette=datasette, plugin_package="datasette_vite", react=True)
+    html = await entry("src/main.tsx")
+    preamble = html.split("</script>")[0]
+    assert (
+        'import RefreshRuntime from "http://localhost:5179/\\u003c/script>\\"x/@react-refresh"'
+        in preamble
+    )
+
+
+@pytest.mark.asyncio
+async def test_react_flag_is_noop_in_prod(tmp_path):
+    manifest = {"src/main.tsx": {"file": "static/main-abc.js", "isEntry": True}}
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    entry = vite_entry(
+        datasette=Datasette(memory=True),
+        plugin_package="datasette_vite",
+        manifest_dir=tmp_path,
+        react=True,
+    )
+    html = await entry("src/main.tsx")
+    assert html == '<script type="module" src="/-/static-plugins/datasette_vite/main-abc.js"></script>'
+    assert vite_js_urls(
+        datasette=Datasette(memory=True),
+        entrypoint="src/main.tsx",
+        plugin_package="datasette_vite",
+        manifest_dir=tmp_path,
+        react=True,
+    ) == [{"url": "/-/static-plugins/datasette_vite/main-abc.js", "module": True}]
+
+
+@pytest.mark.asyncio
+async def test_jinja_global_accepts_react(tmp_path):
+    template_dir = _page_template(
+        tmp_path, '{{ vite_entry("datasette_vite", "src/main.tsx", react=True) }}'
+    )
+    datasette = Datasette(
+        memory=True,
+        template_dir=template_dir,
+        metadata={"plugins": {"datasette-vite": {"dev_ports": {"datasette_vite": 5180}}}},
+    )
+    response = await datasette.client.get("/vite-test")
+    assert '<script type="module">\n' + REACT_PREAMBLE_5180 + "</script>" in response.text
+
+
+def test_vite_js_urls_react_preamble_first():
+    datasette = _ds_with_vite_config({"dev_ports": {"datasette_vite": 5180}})
+    result = vite_js_urls(
+        datasette=datasette,
+        entrypoint="src/main.tsx",
+        plugin_package="datasette_vite",
+        react=True,
+    )
+    assert result == [
+        {"url": "/-/vite/react-preamble.js?plugin_package=datasette_vite", "module": True},
+        {"url": "http://localhost:5180/@vite/client", "module": True},
+        {"url": "http://localhost:5180/src/main.tsx", "module": True},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_react_preamble_route_dev_mode():
+    datasette = _ds_with_vite_config({"dev_ports": {"datasette_vite": 5180}})
+    response = await datasette.client.get(
+        "/-/vite/react-preamble.js?plugin_package=datasette_vite"
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/javascript; charset=utf-8"
+    assert response.text == REACT_PREAMBLE_5180
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query", ["", "?plugin_package=datasette_other", "?plugin_package="]
+)
+async def test_react_preamble_route_404_when_not_in_dev_mode(query):
+    datasette = _ds_with_vite_config({"dev_ports": {"datasette_vite": 5180}})
+    response = await datasette.client.get("/-/vite/react-preamble.js" + query)
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_react_preamble_rendered_before_client_in_page():
+    # extra_js_urls order is preserved by Datasette's base.html
+    from datasette import hookimpl
+    from datasette.plugins import pm
+
+    class ReactContentScript:
+        __name__ = "ReactContentScript"
+
+        @hookimpl
+        def extra_js_urls(self, datasette):
+            return vite_js_urls(
+                datasette=datasette,
+                entrypoint="src/main.tsx",
+                plugin_package="datasette_vite",
+                react=True,
+            )
+
+    datasette = _ds_with_vite_config({"dev_ports": {"datasette_vite": 5180}})
+    pm.register(ReactContentScript(), name="react_content_script")
+    try:
+        response = await datasette.client.get("/")
+    finally:
+        pm.unregister(name="react_content_script")
+    html = response.text
+    preamble = html.index('src="/-/vite/react-preamble.js?plugin_package=datasette_vite"')
+    client = html.index('src="http://localhost:5180/@vite/client"')
+    entry = html.index('src="http://localhost:5180/src/main.tsx"')
+    assert preamble < client < entry
