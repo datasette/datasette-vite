@@ -1,3 +1,4 @@
+import os
 import re
 import pytest
 from pathlib import Path
@@ -19,6 +20,8 @@ def _manifest_path(fixture_name):
 
 def _skip_unless_built(fixture_name):
     if not _manifest_path(fixture_name).exists():
+        if os.environ.get("CI"):
+            pytest.fail(f"{fixture_name} not built in CI")
         pytest.skip(f"{fixture_name} not built (run `just build-fixtures`)")
 
 

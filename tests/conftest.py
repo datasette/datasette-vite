@@ -1,4 +1,5 @@
 import json
+import os
 import pytest
 import threading
 from functools import partial
@@ -18,6 +19,8 @@ def fixture_server():
         dist_path = FIXTURE_DIR / fixture_name / "dist"
         manifest_path = dist_path / ".vite" / "manifest.json"
         if not manifest_path.exists():
+            if os.environ.get("CI"):
+                pytest.fail(f"{fixture_name} not built in CI")
             pytest.skip(f"{fixture_name} not built (run `just build-fixtures`)")
 
         manifest = json.loads(manifest_path.read_text())

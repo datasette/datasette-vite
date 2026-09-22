@@ -14,9 +14,9 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
       with:
         python-version: ${{ matrix.python-version }}
         cache: pip
@@ -24,7 +24,24 @@ jobs:
     - name: Install dependencies
       run: |
         pip install . --group dev
+    - name: Set up Node.js
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+      with:
+        node-version: 22
+        cache: npm
+        cache-dependency-path: tests/vite-fixtures/*/package-lock.json
+    - name: Build Vite fixtures
+      run: |
+        for d in tests/vite-fixtures/*/; do (cd "$d" && npm ci && npm run build); done
+    - name: Install Playwright browsers
+      if: matrix.python-version == '3.12'
+      run: python -m playwright install --with-deps chromium
     - name: Run tests
+      if: matrix.python-version == '3.12'
+      run: |
+        python -m pytest
+    - name: Run tests (not browser)
+      if: matrix.python-version != '3.12'
       run: |
         python -m pytest -m "not browser"
   deploy:
@@ -34,9 +51,9 @@ jobs:
     permissions:
       id-token: write
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09  # v5.1.0
     - name: Set up Python
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
       with:
         python-version: "3.12"
         cache: pip
@@ -48,5 +65,5 @@ jobs:
       run: |
         python -m build
     - name: Publish
-      uses: pypa/gh-action-pypi-publish@release/v1
+      uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33  # v1.14.2
 

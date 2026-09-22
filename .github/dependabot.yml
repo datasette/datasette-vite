@@ -1,0 +1,22 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directories:
+      - /example
+      - /tests/vite-fixtures/react-ts
+      - /tests/vite-fixtures/svelte-ts
+      - /tests/vite-fixtures/vanilla-ts
+    schedule:
+      interval: monthly
+    groups:
+      vite:
+        patterns:
+          - vite
+          - "@vitejs/*"
+          - "@sveltejs/*"
+          - esbuild
+          - rollup
