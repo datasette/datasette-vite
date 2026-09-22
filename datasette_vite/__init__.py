@@ -1,9 +1,10 @@
 from datasette import hookimpl
+from datasette.utils.asgi import Response
 from markupsafe import Markup, escape
 from pathlib import Path
 from pydantic import BaseModel
 from typing import Awaitable, Callable, Optional
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 import importlib
 import json
 import logging
@@ -67,6 +68,19 @@ def _resolve_vite_dev_path(datasette, plugin_package: str) -> str | None:
             )
         return f"http://localhost:{port}/"
     return None
+
+
+def _react_preamble_js(vite_dev_path: str) -> str:
+    """The @vitejs/plugin-react preamble, per Vite's backend-integration guide."""
+    # JSON-encode the URL as a JS string; escape "<" so it can't close a <script>.
+    runtime = json.dumps(f"{vite_dev_path}@react-refresh").replace("<", "\\u003c")
+    return (
+        f"import RefreshRuntime from {runtime}\n"
+        "RefreshRuntime.injectIntoGlobalHook(window)\n"
+        "window.$RefreshReg$ = () => {}\n"
+        "window.$RefreshSig$ = () => (type) => type\n"
+        "window.__vite_plugin_react_preamble_installed__ = true\n"
+    )
 
 
 def _manifest_path(plugin_package: str, manifest_dir: str | Path | None) -> Path:
@@ -170,13 +184,22 @@ def vite_js_urls(
     entrypoint: str,
     plugin_package: str,
     manifest_dir: str | Path | None = None,
+    *,
+    react: bool = False,
 ) -> list:
     vite_dev_path = _resolve_vite_dev_path(datasette, plugin_package)
     if vite_dev_path:
-        return [
+        urls = [
             {"url": f"{vite_dev_path}@vite/client", "module": True},
             {"url": f"{vite_dev_path}{entrypoint}", "module": True},
         ]
+        if react:
+            preamble = datasette.urls.path(
+                "-/vite/react-preamble.js?"
+                + urlencode({"plugin_package": plugin_package})
+            )
+            urls.insert(0, {"url": preamble, "module": True})
+        return urls
     manifest = _load_manifest(plugin_package, manifest_dir)
     chunk = manifest.get(entrypoint)
     if not chunk:
@@ -221,15 +244,24 @@ def _render_entry(
     *,
     nonce: str | None = None,
     crossorigin: str | None = None,
+    react: bool = False,
 ) -> Markup:
     attrs = _tag_attrs(nonce, crossorigin)
     vite_dev_path = _resolve_vite_dev_path(datasette, plugin_package)
     if vite_dev_path:
         base = escape(vite_dev_path)
-        return Markup(
+        html = Markup(
             f'<script type="module" src="{base}@vite/client"{attrs}></script>\n'
             f'<script type="module" src="{base}{escape(entrypoint)}"{attrs}></script>'
         )
+        if react:
+            # Inline script: crossorigin does not apply, only the nonce.
+            preamble = Markup(
+                f'<script type="module"{_tag_attrs(nonce, None)}>\n'
+                f"{_react_preamble_js(vite_dev_path)}</script>\n"
+            )
+            html = preamble + html
+        return html
 
     manifest = _load_manifest(plugin_package, manifest_dir)
     chunk = manifest.get(entrypoint)
@@ -262,6 +294,7 @@ def vite_entry(
     *,
     nonce: str | None = None,
     crossorigin: str | None = None,
+    react: bool = False,
 ) -> Callable[[str], Awaitable[Markup]]:
     # Config and manifest are resolved on every call (the manifest is cached), so
     # the returned callable can be created once and reused across requests.
@@ -273,6 +306,7 @@ def vite_entry(
             manifest_dir,
             nonce=nonce,
             crossorigin=crossorigin,
+            react=react,
         )
 
     return entry
@@ -287,6 +321,7 @@ def prepare_jinja2_environment(env, datasette):
         *,
         nonce: str | None = None,
         crossorigin: str | None = None,
+        react: bool = False,
     ) -> Markup:
         return _render_entry(
             datasette,
@@ -295,9 +330,29 @@ def prepare_jinja2_environment(env, datasette):
             manifest_dir,
             nonce=nonce,
             crossorigin=crossorigin,
+            react=react,
         )
 
     env.globals["vite_entry"] = vite_entry_global
+
+
+async def _react_preamble_view(datasette, request):
+    # The dev path comes from server-side config, never from the request, so
+    # nothing user-supplied is reflected into the script.
+    plugin_package = request.args.get("plugin_package") or ""
+    vite_dev_path = _resolve_vite_dev_path(datasette, plugin_package)
+    if not vite_dev_path:
+        return Response.text("Not found", status=404)
+    return Response(
+        _react_preamble_js(vite_dev_path),
+        content_type="text/javascript; charset=utf-8",
+    )
+
+
+# specname lets this coexist with other register_routes implementations here.
+@hookimpl(specname="register_routes")
+def register_react_preamble_route(datasette):
+    return [(r"^/-/vite/react-preamble\.js$", _react_preamble_view)]
 
 
 @hookimpl

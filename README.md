@@ -144,6 +144,35 @@ In dev mode this produces:
 <script type="module" src="http://localhost:5173/src/main.ts"></script>
 ```
 
+#### React (`react=True`)
+
+`@vitejs/plugin-react` needs a small "React Refresh" preamble script to run before your
+entry module in dev mode, or HMR fails with `@vitejs/plugin-react can't detect preamble`.
+datasette-vite can't detect which Vite plugins you use, so opt in with `react=True`:
+
+```python
+entry = vite_entry(
+    datasette=datasette,
+    plugin_package="my_datasette_plugin",
+    react=True,
+)
+```
+
+or in a template:
+
+```html+jinja
+{{ vite_entry("my_datasette_plugin", "src/main.tsx", react=True) }}
+```
+
+In dev mode this prepends an inline `<script type="module">` that imports
+`http://localhost:5173/@react-refresh` and installs the hooks (it gets the `nonce` if you
+pass one). In production the flag does nothing.
+
+`vite_js_urls(..., react=True)` works too. Since `extra_js_urls` can't hold inline
+scripts, it adds `/-/vite/react-preamble.js?plugin_package=my_datasette_plugin` as the
+first entry, before `@vite/client`. That route serves the same preamble, built from your
+`dev_paths` / `dev_ports` setting, and returns 404 for any package not in dev mode.
+
 ### Using `vite_js_urls()` and `vite_css_urls()` for content scripts
 
 If your plugin needs to inject assets into *existing* Datasette pages (rather than owning the full template), use `vite_js_urls()` and `vite_css_urls()`. These return structured data suitable for Datasette's `extra_js_urls` and `extra_css_urls` hooks:
@@ -177,7 +206,7 @@ Dev-mode behavior is controlled by the same `plugins.datasette-vite.dev_paths` /
 
 ### API reference
 
-#### `vite_entry(datasette, plugin_package, manifest_dir=None, *, nonce=None, crossorigin=None)`
+#### `vite_entry(datasette, plugin_package, manifest_dir=None, *, nonce=None, crossorigin=None, react=False)`
 
 - **`datasette`**: The Datasette instance.
 - **`plugin_package`**: The Python package name of your plugin (used to resolve the manifest location, generate static asset URLs, and look up dev-mode config).
@@ -185,13 +214,15 @@ Dev-mode behavior is controlled by the same `plugins.datasette-vite.dev_paths` /
 - **`nonce`**: Optional keyword-only [CSP nonce](https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes/nonce). When set, `nonce="..."` is added to every emitted `<script>`, `<link rel="stylesheet">` and `<link rel="modulepreload">` tag. Datasette has no built-in CSP nonce; generate one per request yourself (for example in an `asgi_wrapper` that also sets the `Content-Security-Policy` header) and pass it through.
 - **`crossorigin`**: Optional keyword-only value for the `crossorigin` attribute on every emitted tag (`"anonymous"`, `"use-credentials"`, or `""` for a bare `crossorigin`). Useful when assets are served from another origin, such as a CDN or the Vite dev server; a `modulepreload` must match the `crossorigin` of the script that imports it.
 
+- **`react`**: Optional keyword-only flag. In dev mode, prepend the React Refresh preamble needed by `@vitejs/plugin-react` (see "React" under Development mode). Ignored in production.
+
 When neither `nonce` nor `crossorigin` is passed, the output contains neither attribute.
 
 Returns an async callable. Call it with an entrypoint path (matching a key in your Vite manifest) to get a `markupsafe.Markup` string of the corresponding `<script>` and `<link>` tags. All attribute values are HTML-escaped, so the result is safe to render in a Jinja template without `|safe`.
 
-#### `{{ vite_entry(plugin_package, entrypoint, manifest_dir=None, nonce=None, crossorigin=None) }}` (Jinja global)
+#### `{{ vite_entry(plugin_package, entrypoint, manifest_dir=None, nonce=None, crossorigin=None, react=False) }}` (Jinja global)
 
-Available in every Datasette template. Returns the same `markupsafe.Markup` as awaiting the callable from `vite_entry()`; it is synchronous, so no `await` is needed in the template. `nonce` and `crossorigin` must be passed as keywords, e.g. `{{ vite_entry("my_plugin", "src/main.ts", nonce=csp_nonce) }}`.
+Available in every Datasette template. Returns the same `markupsafe.Markup` as awaiting the callable from `vite_entry()`; it is synchronous, so no `await` is needed in the template. `nonce`, `crossorigin` and `react` must be passed as keywords, e.g. `{{ vite_entry("my_plugin", "src/main.ts", nonce=csp_nonce) }}`.
 
 #### Dev-mode resolution order
 
@@ -201,9 +232,9 @@ For all three functions, the dev path is resolved from `datasette.plugin_config(
 2. `dev_ports.<plugin_package>` — port number (an integer, or a string of digits); expanded to `http://localhost:<port>/`. Non-integer or out-of-range (not 1–65535) values raise `ValueError`.
 3. None — production mode; assets are read from the manifest.
 
-#### `vite_js_urls(datasette, entrypoint, plugin_package, manifest_dir=None)`
+#### `vite_js_urls(datasette, entrypoint, plugin_package, manifest_dir=None, *, react=False)`
 
-Returns a list of URL entries suitable for Datasette's `extra_js_urls` hook. Each entry is a `{"url": "...", "module": True}` dict.
+Returns a list of URL entries suitable for Datasette's `extra_js_urls` hook. Each entry is a `{"url": "...", "module": True}` dict. With `react=True` in dev mode, the first entry is the `/-/vite/react-preamble.js` route described under "React" in Development mode.
 
 Datasette renders `extra_js_urls` entries itself and only supports the `url`, `module` and `sri` keys, so there is no way to add a `nonce` or a custom `crossorigin` to these scripts (the same applies to `vite_css_urls()` and `extra_css_urls`). If your site uses a nonce-based `script-src` Content Security Policy, render your assets from a template with `vite_entry()` instead.
 
