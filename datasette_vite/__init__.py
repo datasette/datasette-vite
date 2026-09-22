@@ -202,18 +202,33 @@ def vite_css_urls(
     return css_urls
 
 
+def _tag_attrs(nonce: str | None, crossorigin: str | None) -> Markup:
+    attrs = Markup("")
+    if nonce is not None:
+        attrs += Markup(' nonce="{}"').format(nonce)
+    if crossorigin == "":
+        attrs += Markup(" crossorigin")
+    elif crossorigin is not None:
+        attrs += Markup(' crossorigin="{}"').format(crossorigin)
+    return attrs
+
+
 def _render_entry(
     datasette,
     plugin_package: str,
     entrypoint: str,
     manifest_dir: str | Path | None = None,
+    *,
+    nonce: str | None = None,
+    crossorigin: str | None = None,
 ) -> Markup:
+    attrs = _tag_attrs(nonce, crossorigin)
     vite_dev_path = _resolve_vite_dev_path(datasette, plugin_package)
     if vite_dev_path:
         base = escape(vite_dev_path)
         return Markup(
-            f'<script type="module" src="{base}@vite/client"></script>\n'
-            f'<script type="module" src="{base}{escape(entrypoint)}"></script>'
+            f'<script type="module" src="{base}@vite/client"{attrs}></script>\n'
+            f'<script type="module" src="{base}{escape(entrypoint)}"{attrs}></script>'
         )
 
     manifest = _load_manifest(plugin_package, manifest_dir)
@@ -226,12 +241,16 @@ def _render_entry(
         datasette, plugin_package, manifest, entrypoint
     )
     for href in css_urls:
-        parts.append(Markup(f'<link rel="stylesheet" href="{escape(href)}">'))
+        parts.append(Markup(f'<link rel="stylesheet" href="{escape(href)}"{attrs}>'))
     for href in preload_urls:
-        parts.append(Markup(f'<link rel="modulepreload" href="{escape(href)}">'))
+        parts.append(
+            Markup(f'<link rel="modulepreload" href="{escape(href)}"{attrs}>')
+        )
 
     src = _static_url(datasette, plugin_package, chunk.file)
-    parts.append(Markup(f'<script type="module" src="{escape(src)}"></script>'))
+    parts.append(
+        Markup(f'<script type="module" src="{escape(src)}"{attrs}></script>')
+    )
 
     return Markup("\n").join(parts)
 
@@ -240,11 +259,21 @@ def vite_entry(
     datasette,
     plugin_package: str,
     manifest_dir: str | Path | None = None,
+    *,
+    nonce: str | None = None,
+    crossorigin: str | None = None,
 ) -> Callable[[str], Awaitable[Markup]]:
     # Config and manifest are resolved on every call (the manifest is cached), so
     # the returned callable can be created once and reused across requests.
     async def entry(entrypoint: str) -> Markup:
-        return _render_entry(datasette, plugin_package, entrypoint, manifest_dir)
+        return _render_entry(
+            datasette,
+            plugin_package,
+            entrypoint,
+            manifest_dir,
+            nonce=nonce,
+            crossorigin=crossorigin,
+        )
 
     return entry
 
@@ -255,8 +284,18 @@ def prepare_jinja2_environment(env, datasette):
         plugin_package: str,
         entrypoint: str,
         manifest_dir: str | Path | None = None,
+        *,
+        nonce: str | None = None,
+        crossorigin: str | None = None,
     ) -> Markup:
-        return _render_entry(datasette, plugin_package, entrypoint, manifest_dir)
+        return _render_entry(
+            datasette,
+            plugin_package,
+            entrypoint,
+            manifest_dir,
+            nonce=nonce,
+            crossorigin=crossorigin,
+        )
 
     env.globals["vite_entry"] = vite_entry_global
 

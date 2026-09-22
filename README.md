@@ -177,17 +177,21 @@ Dev-mode behavior is controlled by the same `plugins.datasette-vite.dev_paths` /
 
 ### API reference
 
-#### `vite_entry(datasette, plugin_package, manifest_dir=None)`
+#### `vite_entry(datasette, plugin_package, manifest_dir=None, *, nonce=None, crossorigin=None)`
 
 - **`datasette`**: The Datasette instance.
 - **`plugin_package`**: The Python package name of your plugin (used to resolve the manifest location, generate static asset URLs, and look up dev-mode config).
 - **`manifest_dir`**: Optional path to the directory containing `manifest.json`. Defaults to the directory of your plugin package's `__init__.py`.
+- **`nonce`**: Optional keyword-only [CSP nonce](https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes/nonce). When set, `nonce="..."` is added to every emitted `<script>`, `<link rel="stylesheet">` and `<link rel="modulepreload">` tag. Datasette has no built-in CSP nonce; generate one per request yourself (for example in an `asgi_wrapper` that also sets the `Content-Security-Policy` header) and pass it through.
+- **`crossorigin`**: Optional keyword-only value for the `crossorigin` attribute on every emitted tag (`"anonymous"`, `"use-credentials"`, or `""` for a bare `crossorigin`). Useful when assets are served from another origin, such as a CDN or the Vite dev server; a `modulepreload` must match the `crossorigin` of the script that imports it.
+
+When neither `nonce` nor `crossorigin` is passed, the output contains neither attribute.
 
 Returns an async callable. Call it with an entrypoint path (matching a key in your Vite manifest) to get a `markupsafe.Markup` string of the corresponding `<script>` and `<link>` tags. All attribute values are HTML-escaped, so the result is safe to render in a Jinja template without `|safe`.
 
-#### `{{ vite_entry(plugin_package, entrypoint, manifest_dir=None) }}` (Jinja global)
+#### `{{ vite_entry(plugin_package, entrypoint, manifest_dir=None, nonce=None, crossorigin=None) }}` (Jinja global)
 
-Available in every Datasette template. Returns the same `markupsafe.Markup` as awaiting the callable from `vite_entry()`; it is synchronous, so no `await` is needed in the template.
+Available in every Datasette template. Returns the same `markupsafe.Markup` as awaiting the callable from `vite_entry()`; it is synchronous, so no `await` is needed in the template. `nonce` and `crossorigin` must be passed as keywords, e.g. `{{ vite_entry("my_plugin", "src/main.ts", nonce=csp_nonce) }}`.
 
 #### Dev-mode resolution order
 
@@ -200,6 +204,8 @@ For all three functions, the dev path is resolved from `datasette.plugin_config(
 #### `vite_js_urls(datasette, entrypoint, plugin_package, manifest_dir=None)`
 
 Returns a list of URL entries suitable for Datasette's `extra_js_urls` hook. Each entry is a `{"url": "...", "module": True}` dict.
+
+Datasette renders `extra_js_urls` entries itself and only supports the `url`, `module` and `sri` keys, so there is no way to add a `nonce` or a custom `crossorigin` to these scripts (the same applies to `vite_css_urls()` and `extra_css_urls`). If your site uses a nonce-based `script-src` Content Security Policy, render your assets from a template with `vite_entry()` instead.
 
 #### `vite_css_urls(datasette, entrypoint, plugin_package, manifest_dir=None)`
 
