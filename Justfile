@@ -19,3 +19,16 @@ dev *flags:
 
 dev-vite *flags:
   npm run dev --prefix example {{flags}}
+
+build-example:
+  npm run build --prefix example
+  rm -rf datasette_vite/static
+  cp -R example/dist/static datasette_vite/static
+  cp example/dist/manifest.json datasette_vite/manifest.json
+
+dev-prod *flags:
+  uv run datasette \
+    --plugins-dir example/plugins \
+    --template-dir example/templates \
+    --root \
+    {{flags}}

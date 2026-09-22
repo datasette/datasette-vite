@@ -1,9 +1,6 @@
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  server: {
-    cors: true,
-  },
   build: {
     manifest: "manifest.json",
     outDir: "dist",

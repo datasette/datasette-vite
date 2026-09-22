@@ -10,8 +10,8 @@ classifiers=[
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "datasette",
-    "pydantic"
+    "datasette>=1.0a0",
+    "pydantic>=2"
 ]
 
 [dependency-groups]
@@ -43,6 +43,12 @@ markers = [
     "browser: Playwright browser tests (require built fixtures + browser binaries)",
 ]
 
+[tool.setuptools]
+packages = ["datasette_vite"]
+
 [tool.setuptools.package-data]
-datasette_vite = ["static/*", "templates/*"]
+datasette_vite = ["manifest.json", "static/**/*", "templates/**/*"]
+
+[tool.uv]
+prerelease = "allow"
 
