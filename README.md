@@ -165,6 +165,16 @@ Returns a list of URL entries suitable for Datasette's `extra_js_urls` hook. Eac
 
 Returns a list of CSS URL strings suitable for Datasette's `extra_css_urls` hook. Includes CSS from the entrypoint and recursively from imported chunks.
 
+#### `ManifestError`
+
+A `ValueError` subclass, importable from `datasette_vite`, raised when:
+
+- the manifest file does not exist (the message names the path it looked at — usually you forgot to run `vite build` and copy `manifest.json` into your package),
+- `plugin_package` has no `__file__` (for example a namespace package) and no `manifest_dir=` was passed,
+- a manifest path does not start with `static/` (see the `rollupOptions.output` settings above), or contains `..` or is absolute.
+
+A missing entrypoint key in an otherwise valid manifest still raises a plain `ValueError` (`Entrypoint ... not found in manifest`).
+
 ## Development
 
 To set up this plugin locally, first checkout the code. You can confirm it is available like this:

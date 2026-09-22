@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- New `ManifestError` exception (a `ValueError` subclass, exported from `datasette_vite`). Existing `except ValueError` / `pytest.raises(ValueError)` code keeps working.
+- A missing `manifest.json` now raises `ManifestError("Vite manifest not found at <path>...")` instead of the misleading `Entrypoint ... not found in manifest`. `vite_entry()` raises it when the factory is called.
+- Manifest paths that don't start with `static/` (e.g. Vite's default `assets/`) or that contain `..` now raise `ManifestError` with an actionable message instead of a cryptic `relative_to` error.
+- Dotted `plugin_package` names (e.g. `mycompany.datasette_thing`) now resolve the manifest in the leaf package directory rather than the top-level package.
+- A namespace package without `__file__` now raises `ManifestError` (previously an `assert`, stripped under `python -O`).
+
 ## 0.0.1a4
 
 **Breaking change.** The `vite_dev_path` keyword argument has been removed from `vite_entry()`, `vite_js_urls()`, and `vite_css_urls()`. Dev-mode URLs are now resolved exclusively from the `datasette-vite` plugin setting.
