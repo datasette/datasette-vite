@@ -79,6 +79,11 @@ def _manifest_path(plugin_package: str, manifest_dir: str | Path | None) -> Path
     return Path(mod_file).parent / "manifest.json"
 
 
+# Parsed manifests keyed on resolved path; the mtime lets a rebuilt manifest be
+# picked up without restarting Datasette.
+_MANIFEST_CACHE: dict[Path, tuple[float, dict[str, ManifestChunk]]] = {}
+
+
 def _load_manifest(
     plugin_package: str,
     manifest_dir: str | Path | None = None,
@@ -89,8 +94,14 @@ def _load_manifest(
             f"Vite manifest not found at {path}. Run `vite build` and copy "
             f"manifest.json into the {plugin_package} package (or pass manifest_dir=)."
         )
+    mtime = path.stat().st_mtime
+    cached = _MANIFEST_CACHE.get(path)
+    if cached and cached[0] == mtime:
+        return cached[1]
     raw = json.loads(path.read_text())
-    return {k: ManifestChunk(**v) for k, v in raw.items()}
+    manifest = {k: ManifestChunk(**v) for k, v in raw.items()}
+    _MANIFEST_CACHE[path] = (mtime, manifest)
+    return manifest
 
 
 def _static_url(datasette, plugin_package: str, built_path: str) -> str:
@@ -116,30 +127,26 @@ def _collect_css_urls(
     manifest: dict[str, ManifestChunk],
     entrypoint: str,
 ) -> list[str]:
-    chunk = manifest.get(entrypoint)
-    if not chunk:
-        return []
-    urls = []
-    for css in chunk.css or []:
-        urls.append(_static_url(datasette, plugin_package, css))
+    urls: list[str] = []
+    seen_chunks: set[str] = set()
+    seen_urls: set[str] = set()
 
-    seen = set()
-
-    def collect_import_css(chunk_key):
-        if chunk_key in seen:
+    def visit(chunk_key: str) -> None:
+        if chunk_key in seen_chunks:
             return
-        seen.add(chunk_key)
-        imp_chunk = manifest.get(chunk_key)
-        if not imp_chunk:
+        seen_chunks.add(chunk_key)
+        chunk = manifest.get(chunk_key)
+        if not chunk:
             return
-        for css in imp_chunk.css or []:
-            urls.append(_static_url(datasette, plugin_package, css))
-        for sub_import in imp_chunk.imports or []:
-            collect_import_css(sub_import)
+        for css in chunk.css or []:
+            url = _static_url(datasette, plugin_package, css)
+            if url not in seen_urls:
+                seen_urls.add(url)
+                urls.append(url)
+        for imp in chunk.imports or []:
+            visit(imp)
 
-    for imp in chunk.imports or []:
-        collect_import_css(imp)
-
+    visit(entrypoint)
     return urls
 
 
@@ -184,12 +191,10 @@ def vite_entry(
     plugin_package: str,
     manifest_dir: str | Path | None = None,
 ) -> Callable[[str], Awaitable[Markup]]:
-    vite_dev_path = _resolve_vite_dev_path(datasette, plugin_package)
-    manifest: dict[str, ManifestChunk] = {}
-    if not vite_dev_path:
-        manifest = _load_manifest(plugin_package, manifest_dir)
-
+    # Config and manifest are resolved on every call (the manifest is cached), so
+    # the returned callable can be created once and reused across requests.
     async def entry(entrypoint: str) -> Markup:
+        vite_dev_path = _resolve_vite_dev_path(datasette, plugin_package)
         if vite_dev_path:
             base = escape(vite_dev_path)
             return Markup(
@@ -197,6 +202,7 @@ def vite_entry(
                 f'<script type="module" src="{base}{escape(entrypoint)}"></script>'
             )
 
+        manifest = _load_manifest(plugin_package, manifest_dir)
         chunk = manifest.get(entrypoint)
         if not chunk:
             raise ValueError(f"Entrypoint {entrypoint} not found in manifest")

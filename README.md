@@ -99,7 +99,7 @@ datasette \
     -s plugins.datasette-vite.dev_ports.my_datasette_plugin 5173
 ```
 
-Your plugin code is the same in dev and prod — datasette-vite reads the setting at request time:
+Your plugin code is the same in dev and prod — datasette-vite reads the setting (and the cached manifest) each time the callable returned by `vite_entry()` is awaited, not when `vite_entry()` itself is called, so `vite_entry()` can safely be called once at startup:
 
 ```python
 entry = vite_entry(

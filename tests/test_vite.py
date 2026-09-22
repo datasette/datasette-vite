@@ -3,6 +3,7 @@ from markupsafe import Markup
 from datasette_vite import ManifestError, vite_entry, vite_js_urls, vite_css_urls
 from pathlib import Path
 import json
+import os
 import pytest
 
 
@@ -502,3 +503,108 @@ def test_dev_ports_rejects_out_of_range(port):
             entrypoint="src/main.ts",
             plugin_package="datasette_vite",
         )
+
+
+def test_vite_css_urls_dedupes_cycles_and_shared_css(tmp_path):
+    manifest = {
+        "src/main.ts": {
+            "file": "static/main-abc.js",
+            "isEntry": True,
+            "css": ["static/main-abc.css", "static/shared-ddd.css"],
+            "imports": ["_shared.js", "_other.js"],
+        },
+        "_shared.js": {
+            "file": "static/shared.js",
+            "css": ["static/shared-ddd.css", "static/only-shared.css"],
+            "imports": ["src/main.ts"],
+        },
+        "_other.js": {
+            "file": "static/other.js",
+            "css": ["static/main-abc.css"],
+        },
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    result = vite_css_urls(
+        datasette=Datasette(memory=True),
+        entrypoint="src/main.ts",
+        plugin_package="datasette_vite",
+        manifest_dir=tmp_path,
+    )
+    assert result == [
+        "/-/static-plugins/datasette_vite/main-abc.css",
+        "/-/static-plugins/datasette_vite/shared-ddd.css",
+        "/-/static-plugins/datasette_vite/only-shared.css",
+    ]
+
+
+# Manifest caching
+
+
+def test_manifest_parsed_once_per_mtime(tmp_path, monkeypatch):
+    manifest = {"src/main.ts": {"file": "static/main-abc.js", "isEntry": True}}
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+
+    calls = []
+    real_loads = json.loads
+
+    def counting_loads(*args, **kwargs):
+        calls.append(1)
+        return real_loads(*args, **kwargs)
+
+    monkeypatch.setattr(json, "loads", counting_loads)
+    datasette = Datasette(memory=True)
+    for _ in range(2):
+        vite_js_urls(
+            datasette=datasette,
+            entrypoint="src/main.ts",
+            plugin_package="datasette_vite",
+            manifest_dir=tmp_path,
+        )
+    assert len(calls) == 1
+
+
+def test_rebuilt_manifest_is_picked_up(tmp_path):
+    path = tmp_path / "manifest.json"
+    path.write_text(
+        json.dumps({"src/main.ts": {"file": "static/main-old.js", "isEntry": True}})
+    )
+    os.utime(path, (1_000_000_000, 1_000_000_000))
+    datasette = Datasette(memory=True)
+
+    def js_url():
+        return vite_js_urls(
+            datasette=datasette,
+            entrypoint="src/main.ts",
+            plugin_package="datasette_vite",
+            manifest_dir=tmp_path,
+        )[0]["url"]
+
+    assert js_url().endswith("/main-old.js")
+
+    path.write_text(
+        json.dumps({"src/main.ts": {"file": "static/main-new.js", "isEntry": True}})
+    )
+    os.utime(path, (1_000_000_100, 1_000_000_100))
+    assert js_url().endswith("/main-new.js")
+
+
+@pytest.mark.asyncio
+async def test_vite_entry_reads_config_on_each_call(tmp_path):
+    manifest = {"src/main.ts": {"file": "static/main-abc.js", "isEntry": True}}
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    datasette = Datasette(memory=True)
+    entry = vite_entry(
+        datasette=datasette,
+        plugin_package="datasette_vite",
+        manifest_dir=tmp_path,
+    )
+    html = await entry("src/main.ts")
+    assert 'src="/-/static-plugins/datasette_vite/main-abc.js"' in html
+
+    # On Datasette 1.0a, plugin_config() reads from datasette.config
+    datasette.config = {
+        "plugins": {"datasette-vite": {"dev_ports": {"datasette_vite": 5181}}}
+    }
+    html = await entry("src/main.ts")
+    assert '<script type="module" src="http://localhost:5181/@vite/client"></script>' in html
+    assert "main-abc.js" not in html
