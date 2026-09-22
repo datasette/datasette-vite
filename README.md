@@ -94,6 +94,11 @@ The returned `html` string contains `<script>` and `<link>` tags ready to includ
 <script type="module" src="/-/static-plugins/my_datasette_plugin/main-abc123.js"></script>
 ```
 
+If the entrypoint statically imports other chunks (for example a shared vendor chunk), a
+`<link rel="modulepreload">` is emitted for each of them, after the stylesheets and before
+the entry script, so the browser fetches them in parallel instead of one hop at a time.
+Dynamic `import()` chunks are not preloaded; Vite loads those on demand.
+
 `html` is a [`markupsafe.Markup`](https://markupsafe.palletsprojects.com/) string with every interpolated value already escaped, so you can drop it straight into a Jinja template without `|safe`:
 
 ```html+jinja
@@ -166,7 +171,7 @@ def extra_css_urls(datasette):
 
 Dev-mode behavior is controlled by the same `plugins.datasette-vite.dev_paths` / `dev_ports` settings described above.
 
-`vite_js_urls()` returns a list of `{"url": "...", "module": True}` dicts. In dev mode this includes the Vite client script; in prod mode it resolves the hashed filename from the manifest.
+`vite_js_urls()` returns a list of `{"url": "...", "module": True}` dicts. In dev mode this includes the Vite client script; in prod mode it resolves the hashed filename from the manifest. Datasette's `extra_js_urls` can only emit `<script>` tags, so content scripts do not get the `<link rel="modulepreload">` hints that `vite_entry()` emits for imported chunks; those chunks are fetched when the entry script imports them.
 
 `vite_css_urls()` returns a list of CSS URL strings. In dev mode this returns `[]` (Vite injects CSS via JS). In prod mode it collects all CSS from the entrypoint and recursively from imported chunks.
 

@@ -98,6 +98,40 @@ async def test_prod_mode_imported_chunk_css(tmp_path):
     assert '<link rel="stylesheet" href="/-/static-plugins/datasette_vite/gen/deep-ccc333.css">' in html
     # The JS entry script
     assert '<script type="module" src="/-/static-plugins/datasette_vite/gen/index-abc123.js"></script>' in html
+    # CSS links, then modulepreloads for imported chunks (depth-first), then the entry
+    assert html.splitlines() == [
+        '<link rel="stylesheet" href="/-/static-plugins/datasette_vite/gen/index-def456.css">',
+        '<link rel="stylesheet" href="/-/static-plugins/datasette_vite/gen/shared-aaa111.css">',
+        '<link rel="stylesheet" href="/-/static-plugins/datasette_vite/gen/deep-ccc333.css">',
+        '<link rel="modulepreload" href="/-/static-plugins/datasette_vite/gen/shared-xyz789.js">',
+        '<link rel="modulepreload" href="/-/static-plugins/datasette_vite/gen/deep-bbb222.js">',
+        '<script type="module" src="/-/static-plugins/datasette_vite/gen/index-abc123.js"></script>',
+    ]
+
+
+@pytest.mark.asyncio
+async def test_prod_mode_no_modulepreload_for_dynamic_imports(tmp_path):
+    manifest = {
+        "src/main.ts": {
+            "file": "static/main-abc.js",
+            "isEntry": True,
+            "imports": ["_shared.js", "src/main.ts"],
+            "dynamicImports": ["src/lazy.ts"],
+        },
+        "_shared.js": {"file": "static/shared.js"},
+        "src/lazy.ts": {"file": "static/lazy.js", "isDynamicEntry": True},
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    entry = vite_entry(
+        datasette=Datasette(memory=True),
+        plugin_package="datasette_vite",
+        manifest_dir=tmp_path,
+    )
+    html = await entry("src/main.ts")
+    assert html.splitlines() == [
+        '<link rel="modulepreload" href="/-/static-plugins/datasette_vite/shared.js">',
+        '<script type="module" src="/-/static-plugins/datasette_vite/main-abc.js"></script>',
+    ]
 
 
 @pytest.mark.asyncio

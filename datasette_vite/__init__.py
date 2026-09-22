@@ -124,13 +124,20 @@ def _static_url(datasette, plugin_package: str, built_path: str) -> str:
     )
 
 
-def _collect_css_urls(
+def _collect_urls(
     datasette,
     plugin_package: str,
     manifest: dict[str, ManifestChunk],
     entrypoint: str,
-) -> list[str]:
-    urls: list[str] = []
+) -> tuple[list[str], list[str]]:
+    """Walk the entrypoint's static imports depth-first.
+
+    Returns (css_urls, preload_urls): the CSS of the entry and every transitively
+    imported chunk, and the JS files of the imported chunks (excluding the entry).
+    dynamicImports are not followed; Vite loads those at runtime.
+    """
+    css_urls: list[str] = []
+    preload_urls: list[str] = []
     seen_chunks: set[str] = set()
     seen_urls: set[str] = set()
 
@@ -141,16 +148,21 @@ def _collect_css_urls(
         chunk = manifest.get(chunk_key)
         if not chunk:
             return
+        if chunk_key != entrypoint:
+            url = _static_url(datasette, plugin_package, chunk.file)
+            if url not in seen_urls:
+                seen_urls.add(url)
+                preload_urls.append(url)
         for css in chunk.css or []:
             url = _static_url(datasette, plugin_package, css)
             if url not in seen_urls:
                 seen_urls.add(url)
-                urls.append(url)
+                css_urls.append(url)
         for imp in chunk.imports or []:
             visit(imp)
 
     visit(entrypoint)
-    return urls
+    return css_urls, preload_urls
 
 
 def vite_js_urls(
@@ -186,7 +198,8 @@ def vite_css_urls(
     chunk = manifest.get(entrypoint)
     if not chunk:
         raise ValueError(f"Entrypoint {entrypoint} not found in manifest")
-    return _collect_css_urls(datasette, plugin_package, manifest, entrypoint)
+    css_urls, _ = _collect_urls(datasette, plugin_package, manifest, entrypoint)
+    return css_urls
 
 
 def _render_entry(
@@ -209,9 +222,13 @@ def _render_entry(
         raise ValueError(f"Entrypoint {entrypoint} not found in manifest")
     parts = []
 
-    css_urls = _collect_css_urls(datasette, plugin_package, manifest, entrypoint)
+    css_urls, preload_urls = _collect_urls(
+        datasette, plugin_package, manifest, entrypoint
+    )
     for href in css_urls:
         parts.append(Markup(f'<link rel="stylesheet" href="{escape(href)}">'))
+    for href in preload_urls:
+        parts.append(Markup(f'<link rel="modulepreload" href="{escape(href)}">'))
 
     src = _static_url(datasette, plugin_package, chunk.file)
     parts.append(Markup(f'<script type="module" src="{escape(src)}"></script>'))
