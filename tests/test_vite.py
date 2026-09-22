@@ -1,4 +1,5 @@
 from datasette.app import Datasette
+from markupsafe import Markup
 from datasette_vite import ManifestError, vite_entry, vite_js_urls, vite_css_urls
 from pathlib import Path
 import json
@@ -367,3 +368,137 @@ def test_dev_paths_takes_precedence_over_dev_ports():
         {"url": "http://localhost:5179/-/x/@vite/client", "module": True},
         {"url": "http://localhost:5179/-/x/src/sidebar/index.ts", "module": True},
     ]
+
+
+# HTML escaping
+
+
+@pytest.mark.asyncio
+async def test_prod_mode_escapes_manifest_values(tmp_path):
+    manifest = {
+        "src/main.ts": {
+            "file": 'static/x".js',
+            "isEntry": True,
+            "css": ['static/y"><script>alert(1)</script>.css'],
+        }
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    entry = vite_entry(
+        datasette=Datasette(memory=True),
+        plugin_package="datasette_vite",
+        manifest_dir=tmp_path,
+    )
+    html = await entry("src/main.ts")
+    assert isinstance(html, Markup)
+    assert 'src="/-/static-plugins/datasette_vite/x&#34;.js"' in html
+    assert "<script>alert(1)</script>" not in html
+    assert "&lt;script&gt;" in html
+    # Only the attribute delimiters remain as raw quotes
+    assert html.count('"') == 8
+
+
+@pytest.mark.asyncio
+async def test_dev_mode_escapes_dev_path_and_entrypoint():
+    datasette = _ds_with_vite_config(
+        {"dev_paths": {"datasette_vite": 'http://localhost:5179/"x/'}}
+    )
+    entry = vite_entry(datasette=datasette, plugin_package="datasette_vite")
+    html = await entry('src/"main.ts')
+    assert isinstance(html, Markup)
+    assert (
+        html
+        == '<script type="module" src="http://localhost:5179/&#34;x/@vite/client"></script>\n'
+        '<script type="module" src="http://localhost:5179/&#34;x/src/&#34;main.ts"></script>'
+    )
+
+
+@pytest.mark.asyncio
+async def test_prod_mode_returns_markup(tmp_path):
+    manifest = {"src/main.ts": {"file": "static/main-abc.js", "isEntry": True}}
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    entry = vite_entry(
+        datasette=Datasette(memory=True),
+        plugin_package="datasette_vite",
+        manifest_dir=tmp_path,
+    )
+    html = await entry("src/main.ts")
+    assert isinstance(html, Markup)
+    # Markup is not double-escaped when interpolated into other Markup
+    assert str(Markup("{}").format(html)) == str(html)
+
+
+# Dev config validation
+
+
+def test_dev_paths_trailing_slash_added():
+    datasette = _ds_with_vite_config(
+        {"dev_paths": {"datasette_vite": "http://localhost:5179"}}
+    )
+    result = vite_js_urls(
+        datasette=datasette,
+        entrypoint="src/main.ts",
+        plugin_package="datasette_vite",
+    )
+    assert result == [
+        {"url": "http://localhost:5179/@vite/client", "module": True},
+        {"url": "http://localhost:5179/src/main.ts", "module": True},
+    ]
+
+
+@pytest.mark.parametrize(
+    "dev_path",
+    ["javascript:alert(1)", "file:///etc/passwd", "localhost:5173/", "/relative/"],
+)
+def test_dev_paths_rejects_non_http(dev_path):
+    datasette = _ds_with_vite_config({"dev_paths": {"datasette_vite": dev_path}})
+    with pytest.raises(ValueError, match="must be an http\\(s\\) URL"):
+        vite_js_urls(
+            datasette=datasette,
+            entrypoint="src/main.ts",
+            plugin_package="datasette_vite",
+        )
+
+
+def test_dev_paths_allows_https():
+    datasette = _ds_with_vite_config(
+        {"dev_paths": {"datasette_vite": "https://dev.example.com:5173/x/"}}
+    )
+    result = vite_js_urls(
+        datasette=datasette,
+        entrypoint="src/main.ts",
+        plugin_package="datasette_vite",
+    )
+    assert result[0] == {"url": "https://dev.example.com:5173/x/@vite/client", "module": True}
+
+
+@pytest.mark.parametrize("port", [5180, "5180"])
+def test_dev_ports_accepts_int_or_numeric_string(port):
+    datasette = _ds_with_vite_config({"dev_ports": {"datasette_vite": port}})
+    result = vite_js_urls(
+        datasette=datasette,
+        entrypoint="src/main.ts",
+        plugin_package="datasette_vite",
+    )
+    assert result[0] == {"url": "http://localhost:5180/@vite/client", "module": True}
+
+
+@pytest.mark.parametrize("port", ["abc", "5173/", '5173/"><script>', None])
+def test_dev_ports_rejects_non_integer(port):
+    datasette = _ds_with_vite_config({"dev_ports": {"datasette_vite": port}})
+    with pytest.raises(ValueError, match="must be an integer"):
+        vite_js_urls(
+            datasette=datasette,
+            entrypoint="src/main.ts",
+            plugin_package="datasette_vite",
+        )
+
+
+@pytest.mark.parametrize("port", [0, 65536, -1])
+def test_dev_ports_rejects_out_of_range(port):
+    datasette = _ds_with_vite_config({"dev_ports": {"datasette_vite": port}})
+    with pytest.raises(ValueError, match="out of range"):
+        vite_js_urls(
+            datasette=datasette,
+            entrypoint="src/main.ts",
+            plugin_package="datasette_vite",
+        )

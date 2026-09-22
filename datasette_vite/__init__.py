@@ -1,8 +1,9 @@
 from datasette import hookimpl
+from markupsafe import Markup, escape
 from pathlib import Path
 from pydantic import BaseModel
-from textwrap import dedent
 from typing import Awaitable, Callable, Optional
+from urllib.parse import urlsplit
 import importlib
 import json
 
@@ -39,10 +40,29 @@ def _resolve_vite_dev_path(datasette, plugin_package: str) -> str | None:
     config = datasette.plugin_config("datasette-vite") or {}
     dev_paths = config.get("dev_paths") or {}
     if plugin_package in dev_paths:
-        return dev_paths[plugin_package]
+        raw = str(dev_paths[plugin_package])
+        parts = urlsplit(raw)
+        if parts.scheme not in ("http", "https") or not parts.netloc:
+            raise ValueError(
+                f"datasette-vite dev_paths.{plugin_package} must be an http(s) URL, "
+                f"got {raw!r}"
+            )
+        return raw if raw.endswith("/") else raw + "/"
     dev_ports = config.get("dev_ports") or {}
     if plugin_package in dev_ports:
-        return f"http://localhost:{dev_ports[plugin_package]}/"
+        raw_port = dev_ports[plugin_package]
+        try:
+            port = int(raw_port)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"datasette-vite dev_ports.{plugin_package} must be an integer, "
+                f"got {raw_port!r}"
+            ) from None
+        if not 1 <= port <= 65535:
+            raise ValueError(
+                f"datasette-vite dev_ports.{plugin_package} out of range: {port}"
+            )
+        return f"http://localhost:{port}/"
     return None
 
 
@@ -163,20 +183,19 @@ def vite_entry(
     datasette,
     plugin_package: str,
     manifest_dir: str | Path | None = None,
-) -> Callable[[str], Awaitable[str]]:
+) -> Callable[[str], Awaitable[Markup]]:
     vite_dev_path = _resolve_vite_dev_path(datasette, plugin_package)
     manifest: dict[str, ManifestChunk] = {}
     if not vite_dev_path:
         manifest = _load_manifest(plugin_package, manifest_dir)
 
-    async def entry(entrypoint: str) -> str:
+    async def entry(entrypoint: str) -> Markup:
         if vite_dev_path:
-            return dedent(f"""
-
-          <script type="module" src="{vite_dev_path}@vite/client"></script>
-          <script type="module" src="{vite_dev_path}{entrypoint}"></script>
-
-          """)
+            base = escape(vite_dev_path)
+            return Markup(
+                f'<script type="module" src="{base}@vite/client"></script>\n'
+                f'<script type="module" src="{base}{escape(entrypoint)}"></script>'
+            )
 
         chunk = manifest.get(entrypoint)
         if not chunk:
@@ -185,11 +204,11 @@ def vite_entry(
 
         css_urls = _collect_css_urls(datasette, plugin_package, manifest, entrypoint)
         for href in css_urls:
-            parts.append(f'<link rel="stylesheet" href="{href}">')
+            parts.append(Markup(f'<link rel="stylesheet" href="{escape(href)}">'))
 
         src = _static_url(datasette, plugin_package, chunk.file)
-        parts.append(f'<script type="module" src="{src}"></script>')
+        parts.append(Markup(f'<script type="module" src="{escape(src)}"></script>'))
 
-        return "\n".join(parts)
+        return Markup("\n").join(parts)
 
     return entry
