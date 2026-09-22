@@ -6,6 +6,7 @@ from typing import Awaitable, Callable, Optional
 from urllib.parse import urlsplit
 import importlib
 import json
+import logging
 
 __all__ = [
     "ManifestChunk",
@@ -16,6 +17,8 @@ __all__ = [
 ]
 
 STATIC_PREFIX = "static"
+
+logger = logging.getLogger("datasette_vite")
 
 
 class ManifestError(ValueError):
@@ -218,3 +221,15 @@ def vite_entry(
         return Markup("\n").join(parts)
 
     return entry
+
+
+@hookimpl
+def startup(datasette):
+    config = datasette.plugin_config("datasette-vite") or {}
+    packages = {**(config.get("dev_paths") or {}), **(config.get("dev_ports") or {})}
+    if packages:
+        logger.warning(
+            "datasette-vite dev mode is ON for %s. Pages will load assets from a "
+            "Vite dev server. Do not deploy with this setting.",
+            ", ".join(sorted(packages)),
+        )

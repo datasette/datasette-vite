@@ -13,6 +13,7 @@
 - `vite_css_urls()` and `vite_entry()` no longer emit duplicate stylesheet URLs when chunks share a CSS file or an imported chunk imports the entrypoint back.
 - Parsed manifests are now cached per manifest path and modification time, so `vite_js_urls()` / `vite_css_urls()` in `extra_js_urls` / `extra_css_urls` hooks no longer re-read and re-parse `manifest.json` on every page render. A rebuilt manifest is picked up without a restart.
 - The callable returned by `vite_entry()` now resolves the dev-mode setting and loads the manifest each time it is awaited, rather than once when `vite_entry()` is called. It is now safe to create it once (e.g. in a `startup` hook) and reuse it. As a consequence, errors such as a missing manifest are raised when the callable is awaited, not by `vite_entry()` itself.
+- datasette-vite now logs a warning at startup when any `dev_paths` / `dev_ports` entry is configured, naming the packages in dev mode, so dev settings accidentally left in a deployed config are visible in the logs.
 
 ## 0.0.1a4
 

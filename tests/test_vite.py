@@ -608,3 +608,28 @@ async def test_vite_entry_reads_config_on_each_call(tmp_path):
     html = await entry("src/main.ts")
     assert '<script type="module" src="http://localhost:5181/@vite/client"></script>' in html
     assert "main-abc.js" not in html
+
+
+# Startup warning
+
+
+@pytest.mark.asyncio
+async def test_startup_warns_in_dev_mode(caplog):
+    datasette = _ds_with_vite_config(
+        {
+            "dev_ports": {"datasette_vite": 5180},
+            "dev_paths": {"datasette_other": "http://localhost:5179/"},
+        }
+    )
+    await datasette.invoke_startup()
+    records = [r for r in caplog.records if "dev mode is ON" in r.getMessage()]
+    assert len(records) == 1
+    assert records[0].levelname == "WARNING"
+    assert "datasette_other, datasette_vite" in records[0].getMessage()
+
+
+@pytest.mark.asyncio
+async def test_startup_silent_without_dev_config(caplog):
+    datasette = Datasette(memory=True)
+    await datasette.invoke_startup()
+    assert "dev mode is ON" not in caplog.text

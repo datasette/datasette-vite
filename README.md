@@ -99,6 +99,8 @@ datasette \
     -s plugins.datasette-vite.dev_ports.my_datasette_plugin 5173
 ```
 
+Whenever any `dev_paths` or `dev_ports` entry is configured, datasette-vite logs a warning at startup naming the packages in dev mode (`datasette-vite dev mode is ON for my_datasette_plugin...`). Dev-mode pages load scripts from `localhost`, which breaks (or worse) for real visitors, so never deploy with these settings.
+
 Your plugin code is the same in dev and prod — datasette-vite reads the setting (and the cached manifest) each time the callable returned by `vite_entry()` is awaited, not when `vite_entry()` itself is called, so `vite_entry()` can safely be called once at startup:
 
 ```python
