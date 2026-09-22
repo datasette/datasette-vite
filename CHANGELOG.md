@@ -7,6 +7,8 @@
 - Manifest paths that don't start with `static/` (e.g. Vite's default `assets/`) or that contain `..` now raise `ManifestError` with an actionable message instead of a cryptic `relative_to` error.
 - Dotted `plugin_package` names (e.g. `mycompany.datasette_thing`) now resolve the manifest in the leaf package directory rather than the top-level package.
 - A namespace package without `__file__` now raises `ManifestError` (previously an `assert`, stripped under `python -O`).
+- **Return type change:** the callable returned by `vite_entry()` now returns `markupsafe.Markup` instead of `str`, with every interpolated URL and entrypoint HTML-escaped. `Markup` is a `str` subclass, so existing string handling and `|safe` filters keep working; you can now drop `|safe` from templates. The dev-mode output no longer has leading/trailing blank lines.
+- `markupsafe` is now a declared dependency (it was already installed via Jinja2).
 
 ## 0.0.1a4
 

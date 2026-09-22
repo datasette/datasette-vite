@@ -73,6 +73,14 @@ The returned `html` string contains `<script>` and `<link>` tags ready to includ
 <script type="module" src="/-/static-plugins/my_datasette_plugin/main-abc123.js"></script>
 ```
 
+`html` is a [`markupsafe.Markup`](https://markupsafe.palletsprojects.com/) string with every interpolated value already escaped, so you can drop it straight into a Jinja template without `|safe`:
+
+```html+jinja
+{% block extra_head %}
+{{ my_plugin_vite_head }}
+{% endblock %}
+```
+
 ### Development mode
 
 During development, point your plugin at a running Vite dev server instead of reading from the manifest. This enables hot module replacement.
@@ -147,7 +155,7 @@ Dev-mode behavior is controlled by the same `plugins.datasette-vite.dev_paths` /
 - **`plugin_package`**: The Python package name of your plugin (used to resolve the manifest location, generate static asset URLs, and look up dev-mode config).
 - **`manifest_dir`**: Optional path to the directory containing `manifest.json`. Defaults to the directory of your plugin package's `__init__.py`.
 
-Returns an async callable. Call it with an entrypoint path (matching a key in your Vite manifest) to get an HTML string of the corresponding `<script>` and `<link>` tags.
+Returns an async callable. Call it with an entrypoint path (matching a key in your Vite manifest) to get a `markupsafe.Markup` string of the corresponding `<script>` and `<link>` tags. All attribute values are HTML-escaped, so the result is safe to render in a Jinja template without `|safe`.
 
 #### Dev-mode resolution order
 
