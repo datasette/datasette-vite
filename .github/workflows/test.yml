@@ -22,7 +22,24 @@ jobs:
     - name: Install dependencies
       run: |
         pip install . --group dev
+    - name: Set up Node.js
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
+      with:
+        node-version: 22
+        cache: npm
+        cache-dependency-path: tests/vite-fixtures/*/package-lock.json
+    - name: Build Vite fixtures
+      run: |
+        for d in tests/vite-fixtures/*/; do (cd "$d" && npm ci && npm run build); done
+    - name: Install Playwright browsers
+      if: matrix.python-version == '3.12'
+      run: python -m playwright install --with-deps chromium
     - name: Run tests
+      if: matrix.python-version == '3.12'
+      run: |
+        python -m pytest
+    - name: Run tests (not browser)
+      if: matrix.python-version != '3.12'
       run: |
         python -m pytest -m "not browser"
 

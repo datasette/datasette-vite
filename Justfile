@@ -5,9 +5,9 @@ test:
   uv run pytest
 
 build-fixtures:
-  cd tests/vite-fixtures/vanilla-ts && npm install && npm run build
-  cd tests/vite-fixtures/svelte-ts && npm install && npm run build
-  cd tests/vite-fixtures/react-ts && npm install && npm run build
+  cd tests/vite-fixtures/vanilla-ts && npm ci && npm run build
+  cd tests/vite-fixtures/svelte-ts && npm ci && npm run build
+  cd tests/vite-fixtures/react-ts && npm ci && npm run build
 
 dev *flags:
   uv run datasette \
