@@ -161,8 +161,8 @@ Returns an async callable. Call it with an entrypoint path (matching a key in yo
 
 For all three functions, the dev path is resolved from `datasette.plugin_config("datasette-vite")` in this order — first match wins:
 
-1. `dev_paths.<plugin_package>` — full URL.
-2. `dev_ports.<plugin_package>` — port number; expanded to `http://localhost:<port>/`.
+1. `dev_paths.<plugin_package>` — full URL. Must use the `http` or `https` scheme and include a host; anything else (`javascript:`, `file:`, a bare `localhost:5173`) raises `ValueError`. A trailing `/` is added if missing, so `http://localhost:5173` and `http://localhost:5173/` are equivalent.
+2. `dev_ports.<plugin_package>` — port number (an integer, or a string of digits); expanded to `http://localhost:<port>/`. Non-integer or out-of-range (not 1–65535) values raise `ValueError`.
 3. None — production mode; assets are read from the manifest.
 
 #### `vite_js_urls(datasette, entrypoint, plugin_package, manifest_dir=None)`

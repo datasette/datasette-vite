@@ -3,6 +3,7 @@ from markupsafe import Markup, escape
 from pathlib import Path
 from pydantic import BaseModel
 from typing import Awaitable, Callable, Optional
+from urllib.parse import urlsplit
 import importlib
 import json
 
@@ -39,10 +40,29 @@ def _resolve_vite_dev_path(datasette, plugin_package: str) -> str | None:
     config = datasette.plugin_config("datasette-vite") or {}
     dev_paths = config.get("dev_paths") or {}
     if plugin_package in dev_paths:
-        return dev_paths[plugin_package]
+        raw = str(dev_paths[plugin_package])
+        parts = urlsplit(raw)
+        if parts.scheme not in ("http", "https") or not parts.netloc:
+            raise ValueError(
+                f"datasette-vite dev_paths.{plugin_package} must be an http(s) URL, "
+                f"got {raw!r}"
+            )
+        return raw if raw.endswith("/") else raw + "/"
     dev_ports = config.get("dev_ports") or {}
     if plugin_package in dev_ports:
-        return f"http://localhost:{dev_ports[plugin_package]}/"
+        raw_port = dev_ports[plugin_package]
+        try:
+            port = int(raw_port)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"datasette-vite dev_ports.{plugin_package} must be an integer, "
+                f"got {raw_port!r}"
+            ) from None
+        if not 1 <= port <= 65535:
+            raise ValueError(
+                f"datasette-vite dev_ports.{plugin_package} out of range: {port}"
+            )
+        return f"http://localhost:{port}/"
     return None
 
 
