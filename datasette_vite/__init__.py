@@ -3,7 +3,22 @@ from pathlib import Path
 from pydantic import BaseModel
 from textwrap import dedent
 from typing import Awaitable, Callable, Optional
+import importlib
 import json
+
+__all__ = [
+    "ManifestChunk",
+    "ManifestError",
+    "vite_css_urls",
+    "vite_entry",
+    "vite_js_urls",
+]
+
+STATIC_PREFIX = "static"
+
+
+class ManifestError(ValueError):
+    """Raised when a Vite manifest is missing, malformed, or references an unexpected path."""
 
 
 class ManifestChunk(BaseModel):
@@ -31,22 +46,48 @@ def _resolve_vite_dev_path(datasette, plugin_package: str) -> str | None:
     return None
 
 
+def _manifest_path(plugin_package: str, manifest_dir: str | Path | None) -> Path:
+    if manifest_dir is not None:
+        return Path(manifest_dir) / "manifest.json"
+    mod = importlib.import_module(plugin_package)
+    mod_file = getattr(mod, "__file__", None)
+    if mod_file is None:
+        raise ManifestError(
+            f"{plugin_package} has no __file__ (namespace package?); "
+            "pass manifest_dir= explicitly"
+        )
+    return Path(mod_file).parent / "manifest.json"
+
+
 def _load_manifest(
     plugin_package: str,
     manifest_dir: str | Path | None = None,
 ) -> dict[str, ManifestChunk]:
-    if manifest_dir is None:
-        mod = __import__(plugin_package)
-        mod_file = mod.__file__
-        assert mod_file is not None, f"Module {plugin_package} has no __file__"
-        resolved_dir = Path(mod_file).parent
-    else:
-        resolved_dir = Path(manifest_dir)
-    manifest_path = resolved_dir / "manifest.json"
-    if manifest_path.exists():
-        manifest_raw = json.loads(manifest_path.read_text())
-        return {k: ManifestChunk(**v) for k, v in manifest_raw.items()}
-    return {}
+    path = _manifest_path(plugin_package, manifest_dir)
+    if not path.exists():
+        raise ManifestError(
+            f"Vite manifest not found at {path}. Run `vite build` and copy "
+            f"manifest.json into the {plugin_package} package (or pass manifest_dir=)."
+        )
+    raw = json.loads(path.read_text())
+    return {k: ManifestChunk(**v) for k, v in raw.items()}
+
+
+def _static_url(datasette, plugin_package: str, built_path: str) -> str:
+    p = Path(built_path)
+    if ".." in p.parts or p.is_absolute():
+        raise ManifestError(
+            f"Refusing manifest path {built_path!r}: contains '..' or is absolute"
+        )
+    if p.parts[:1] != (STATIC_PREFIX,):
+        raise ManifestError(
+            f"Manifest path {built_path!r} does not start with '{STATIC_PREFIX}/'. "
+            f"Set rollupOptions.output.*FileNames to '{STATIC_PREFIX}/[name]-[hash]...' "
+            "(see README)."
+        )
+    return datasette.urls.static_plugins(
+        plugin_package, p.relative_to(STATIC_PREFIX).as_posix()
+    )
 
 
 def _collect_css_urls(
@@ -60,8 +101,7 @@ def _collect_css_urls(
         return []
     urls = []
     for css in chunk.css or []:
-        file = str(Path(css).relative_to("static"))
-        urls.append(datasette.urls.static_plugins(plugin_package, file))
+        urls.append(_static_url(datasette, plugin_package, css))
 
     seen = set()
 
@@ -73,8 +113,7 @@ def _collect_css_urls(
         if not imp_chunk:
             return
         for css in imp_chunk.css or []:
-            file = str(Path(css).relative_to("static"))
-            urls.append(datasette.urls.static_plugins(plugin_package, file))
+            urls.append(_static_url(datasette, plugin_package, css))
         for sub_import in imp_chunk.imports or []:
             collect_import_css(sub_import)
 
@@ -100,8 +139,7 @@ def vite_js_urls(
     chunk = manifest.get(entrypoint)
     if not chunk:
         raise ValueError(f"Entrypoint {entrypoint} not found in manifest")
-    file = str(Path(chunk.file).relative_to("static"))
-    src = datasette.urls.static_plugins(plugin_package, file)
+    src = _static_url(datasette, plugin_package, chunk.file)
     return [{"url": src, "module": True}]
 
 
@@ -149,8 +187,7 @@ def vite_entry(
         for href in css_urls:
             parts.append(f'<link rel="stylesheet" href="{href}">')
 
-        file = str(Path(chunk.file).relative_to("static"))
-        src = datasette.urls.static_plugins(plugin_package, file)
+        src = _static_url(datasette, plugin_package, chunk.file)
         parts.append(f'<script type="module" src="{src}"></script>')
 
         return "\n".join(parts)

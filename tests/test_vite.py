@@ -1,5 +1,5 @@
 from datasette.app import Datasette
-from datasette_vite import vite_entry, vite_js_urls, vite_css_urls
+from datasette_vite import ManifestError, vite_entry, vite_js_urls, vite_css_urls
 from pathlib import Path
 import json
 import pytest
@@ -115,13 +115,61 @@ async def test_missing_entrypoint(tmp_path):
 @pytest.mark.asyncio
 async def test_missing_manifest(tmp_path):
     datasette = Datasette(memory=True)
-    entry = vite_entry(
-        datasette=datasette,
-        plugin_package="datasette_vite",
-        manifest_dir=tmp_path,
-    )
-    with pytest.raises(ValueError, match="not found in manifest"):
+    with pytest.raises(ManifestError, match="manifest not found") as excinfo:
+        entry = vite_entry(
+            datasette=datasette,
+            plugin_package="datasette_vite",
+            manifest_dir=tmp_path,
+        )
         await entry("src/pages/index.ts")
+    assert str(tmp_path / "manifest.json") in str(excinfo.value)
+
+
+def test_manifest_error_is_value_error():
+    assert issubclass(ManifestError, ValueError)
+
+
+def test_manifest_path_outside_static(tmp_path):
+    manifest = {"src/main.ts": {"file": "assets/x.js", "isEntry": True}}
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(ManifestError, match="does not start with 'static/'"):
+        vite_js_urls(
+            datasette=Datasette(memory=True),
+            entrypoint="src/main.ts",
+            plugin_package="datasette_vite",
+            manifest_dir=tmp_path,
+        )
+
+
+def test_manifest_path_with_dotdot(tmp_path):
+    manifest = {"src/main.ts": {"file": "static/../x.js", "isEntry": True}}
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(ManifestError, match="contains '..'"):
+        vite_js_urls(
+            datasette=Datasette(memory=True),
+            entrypoint="src/main.ts",
+            plugin_package="datasette_vite",
+            manifest_dir=tmp_path,
+        )
+
+
+def test_dotted_plugin_package_resolves_leaf_directory(tmp_path, monkeypatch):
+    sub = tmp_path / "vite_dotted_pkg" / "sub"
+    sub.mkdir(parents=True)
+    (tmp_path / "vite_dotted_pkg" / "__init__.py").write_text("")
+    (sub / "__init__.py").write_text("")
+    manifest = {"src/main.ts": {"file": "static/main-abc.js", "isEntry": True}}
+    (sub / "manifest.json").write_text(json.dumps(manifest))
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    result = vite_js_urls(
+        datasette=Datasette(memory=True),
+        entrypoint="src/main.ts",
+        plugin_package="vite_dotted_pkg.sub",
+    )
+    assert result == [
+        {"url": "/-/static-plugins/vite_dotted_pkg.sub/main-abc.js", "module": True},
+    ]
 
 
 # vite_js_urls / vite_css_urls tests
