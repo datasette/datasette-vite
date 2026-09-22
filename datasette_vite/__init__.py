@@ -79,6 +79,11 @@ def _manifest_path(plugin_package: str, manifest_dir: str | Path | None) -> Path
     return Path(mod_file).parent / "manifest.json"
 
 
+# Parsed manifests keyed on resolved path; the mtime lets a rebuilt manifest be
+# picked up without restarting Datasette.
+_MANIFEST_CACHE: dict[Path, tuple[float, dict[str, ManifestChunk]]] = {}
+
+
 def _load_manifest(
     plugin_package: str,
     manifest_dir: str | Path | None = None,
@@ -89,8 +94,14 @@ def _load_manifest(
             f"Vite manifest not found at {path}. Run `vite build` and copy "
             f"manifest.json into the {plugin_package} package (or pass manifest_dir=)."
         )
+    mtime = path.stat().st_mtime
+    cached = _MANIFEST_CACHE.get(path)
+    if cached and cached[0] == mtime:
+        return cached[1]
     raw = json.loads(path.read_text())
-    return {k: ManifestChunk(**v) for k, v in raw.items()}
+    manifest = {k: ManifestChunk(**v) for k, v in raw.items()}
+    _MANIFEST_CACHE[path] = (mtime, manifest)
+    return manifest
 
 
 def _static_url(datasette, plugin_package: str, built_path: str) -> str:

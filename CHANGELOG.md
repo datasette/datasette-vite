@@ -11,6 +11,7 @@
 - `markupsafe` is now a declared dependency (it was already installed via Jinja2).
 - `dev_paths` values are now validated: they must be `http(s)://` URLs with a host, and a missing trailing `/` is added (previously `http://localhost:5173` produced the broken URL `http://localhost:5173@vite/client`). `dev_ports` values must be integers (or digit strings) in 1–65535. Invalid values raise `ValueError`.
 - `vite_css_urls()` and `vite_entry()` no longer emit duplicate stylesheet URLs when chunks share a CSS file or an imported chunk imports the entrypoint back.
+- Parsed manifests are now cached per manifest path and modification time, so `vite_js_urls()` / `vite_css_urls()` in `extra_js_urls` / `extra_css_urls` hooks no longer re-read and re-parse `manifest.json` on every page render. A rebuilt manifest is picked up without a restart.
 
 ## 0.0.1a4
 
