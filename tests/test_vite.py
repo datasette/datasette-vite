@@ -988,3 +988,68 @@ async def test_react_preamble_rendered_before_client_in_page():
     client = html.index('src="http://localhost:5180/@vite/client"')
     entry = html.index('src="http://localhost:5180/src/main.tsx"')
     assert preamble < client < entry
+
+# /-/vite diagnostics page
+
+
+def _ds_with_root_debug_menu(vite_config=None, **kwargs):
+    metadata = {"plugins": {"datasette-vite": vite_config}} if vite_config else None
+    return Datasette(
+        memory=True,
+        metadata=metadata,
+        config={"permissions": {"debug-menu": {"id": "root"}}},
+        **kwargs,
+    )
+
+
+@pytest.mark.asyncio
+async def test_vite_diagnostics_json_dev_mode():
+    datasette = _ds_with_root_debug_menu(
+        {"dev_ports": {"datasette_vite": 5180}},
+    )
+    response = await datasette.client.get("/-/vite.json", actor={"id": "root"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["dev_mode"] is True
+    rows = {row["package"]: row for row in data["packages"]}
+    assert rows["datasette_vite"]["mode"] == "dev"
+    assert rows["datasette_vite"]["dev_url"] == "http://localhost:5180/"
+
+
+@pytest.mark.asyncio
+async def test_vite_diagnostics_json_prod_mode_from_plugins_dir(tmp_path):
+    (tmp_path / "vite_diag_fixture_plugin.py").write_text("from datasette import hookimpl\n")
+    manifest = {
+        "src/main.ts": {
+            "file": "static/main-abc123.js",
+            "isEntry": True,
+        }
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+
+    datasette = _ds_with_root_debug_menu(plugins_dir=str(tmp_path))
+    response = await datasette.client.get("/-/vite.json", actor={"id": "root"})
+    assert response.status_code == 200
+    data = response.json()
+    rows = {row["package"]: row for row in data["packages"]}
+    assert "vite_diag_fixture_plugin.py" in rows
+    row = rows["vite_diag_fixture_plugin.py"]
+    assert row["mode"] == "prod"
+    assert row["manifest_found"] is True
+    assert row["entrypoints"] == ["src/main.ts"]
+
+
+@pytest.mark.asyncio
+async def test_vite_diagnostics_anonymous_forbidden():
+    datasette = Datasette(memory=True)
+    response = await datasette.client.get("/-/vite.json")
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_vite_diagnostics_html_ok():
+    datasette = _ds_with_root_debug_menu({"dev_ports": {"datasette_vite": 5180}})
+    response = await datasette.client.get("/-/vite", actor={"id": "root"})
+    assert response.status_code == 200
+    assert "<td>datasette_vite</td>" in response.text
+    assert "Dev mode is ON" in response.text

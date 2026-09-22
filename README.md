@@ -252,6 +252,17 @@ A `ValueError` subclass, importable from `datasette_vite`, raised when:
 
 A missing entrypoint key in an otherwise valid manifest still raises a plain `ValueError` (`Entrypoint ... not found in manifest`).
 
+### Diagnostics
+
+`datasette-vite` registers a read-only `/-/vite` page (and a `/-/vite.json` variant)
+listing every package it knows about — the union of `dev_paths`/`dev_ports` keys and
+every installed plugin whose package directory contains a `manifest.json` — along
+with its mode (dev/prod), resolved dev URL (or the config error, if any), manifest
+path, whether the manifest was found, and its entrypoints. A red banner is shown when
+any package is in dev mode. It's linked from the Datasette debug menu, and gated the
+same way Datasette's own debug pages are: the `view-instance` and `debug-menu`
+permissions are both required, so anonymous requests get a 403.
+
 ## Development
 
 To set up this plugin locally, first checkout the code. You can confirm it is available like this:
